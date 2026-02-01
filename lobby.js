@@ -91,13 +91,11 @@ function renderRoom(room) {
   btnStart.style.display = isHost ? "inline-block" : "none";
   btnStart.disabled = !isFull;
 
-  // Si el juego ya empezó, redirigimos (lo haremos luego a game.html)
-  if (room.estado === "jugando") {
-    // Por ahora, solo para confirmar que se detecta.
-    console.log("[Lobby] La partida ha empezado.");
-    // Luego será:
-    // window.location.href = `game.html?room=${encodeURIComponent(roomId)}`;
-  }
+  // Si el juego ya empezó, redirigimos
+if (room.estado === "jugando") {
+  window.location.href = `game.html?room=${encodeURIComponent(roomId)}`;
+}
+
 }
 
 $("btnStart").addEventListener("click", async () => {

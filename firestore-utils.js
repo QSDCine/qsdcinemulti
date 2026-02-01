@@ -71,3 +71,8 @@ export async function startGame(roomId) {
     indiceActual: 0
   });
 }
+
+export async function updateRoom(roomId, data) {
+  await updateDoc(roomRef(roomId), data);
+}
+

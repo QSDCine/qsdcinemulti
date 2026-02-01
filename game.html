@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Partida | QSDC Multi</title>
+
+  <link rel="stylesheet" href="style.css" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" type="image/png" href="icon-192.png" />
+</head>
+
+<body>
+  <div id="app">
+    <h1>Partida</h1>
+
+    <div class="card">
+      <p><strong>ID sala:</strong> <span id="roomIdText">...</span></p>
+      <p><strong>Modo:</strong> <span id="modoText">...</span></p>
+      <p><strong>Multijugador:</strong> <span id="modoRondaText">...</span></p>
+      <p><strong>Ronda:</strong> <span id="roundText">-</span></p>
+    </div>
+
+    <div class="card">
+      <h2>Cuenta atrás</h2>
+      <p id="countdownText" style="font-size: 2rem; margin: 0.2rem 0;">-</p>
+      <p id="statusText" class="hint">Esperando sincronización...</p>
+    </div>
+
+    <div class="card">
+      <h2>Audio</h2>
+      <audio id="audio" controls controlsList="nodownload"></audio>
+    </div>
+
+    <div class="card">
+      <h2>Jugadores</h2>
+      <ul id="playersList"></ul>
+    </div>
+
+    <div class="row">
+      <button id="btnBack" class="secondary">Volver al lobby</button>
+    </div>
+
+    <p id="gameError" class="error" style="display:none;"></p>
+  </div>
+
+  <script type="module" src="game.js"></script>
+
+  <script>
+    if ("serviceWorker" in navigator) {
+      const basePath = window.location.pathname.split("/").slice(0, 2).join("/");
+      navigator.serviceWorker.register(`${basePath}/service-worker.js`)
+        .then(() => console.log("Service Worker registrado"));
+    }
+  </script>
+</body>
+</html>
+
