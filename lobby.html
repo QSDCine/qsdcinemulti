@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Lobby | QSDC Multi</title>
+
+  <link rel="stylesheet" href="style.css" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" type="image/png" href="icon-192.png" />
+</head>
+
+<body>
+  <div id="app">
+    <h1>Lobby</h1>
+
+    <div class="card">
+      <p><strong>ID de sala:</strong> <span id="roomIdText">...</span></p>
+      <button id="btnCopyRoom" class="secondary">Copiar ID</button>
+    </div>
+
+    <div class="card">
+      <p><strong>Modo:</strong> <span id="modoText">...</span></p>
+      <p><strong>Multijugador:</strong> <span id="modoRondaText">...</span></p>
+      <p><strong>Películas:</strong> <span id="numPelisText">...</span></p>
+      <p><strong>Jugadores:</strong> <span id="playersCountText">0/0</span></p>
+    </div>
+
+    <div class="card">
+      <h2>Jugadores en sala</h2>
+      <ul id="playersList"></ul>
+    </div>
+
+    <div class="row">
+      <button id="btnStart" class="primary" style="display:none;" disabled>Empezar partida</button>
+      <button id="btnLeave" class="secondary">Salir</button>
+    </div>
+
+    <p id="lobbyError" class="error" style="display:none;"></p>
+  </div>
+
+  <script type="module" src="lobby.js"></script>
+
+  <script>
+    if ("serviceWorker" in navigator) {
+      const basePath = window.location.pathname.split("/").slice(0, 2).join("/");
+      navigator.serviceWorker.register(`${basePath}/service-worker.js`)
+        .then(() => console.log("Service Worker registrado"));
+    }
+  </script>
+</body>
+</html>
