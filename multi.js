@@ -61,3 +61,50 @@ function makeRoomId() {
   for (let i = 0; i < 6; i++) out += chars[Math.floor(Math.random() * chars.length)];
   return out;
 }
+
+function show(id) {
+  const ids = ["screen-home", "screen-create", "screen-join"];
+  for (const s of ids) {
+    document.getElementById(s).style.display = (s === id) ? "block" : "none";
+  }
+}
+
+function setError(elId, msg) {
+  const p = document.getElementById(elId);
+  if (!msg) {
+    p.style.display = "none";
+    p.textContent = "";
+    return;
+  }
+  p.textContent = msg;
+  p.style.display = "block";
+}
+
+document.getElementById("btn-go-create").addEventListener("click", () => {
+  setError("create-error", "");
+  show("screen-create");
+});
+
+document.getElementById("btn-go-join").addEventListener("click", () => {
+  setError("join-error", "");
+  show("screen-join");
+});
+
+document.getElementById("btn-back-from-create").addEventListener("click", () => show("screen-home"));
+document.getElementById("btn-back-from-join").addEventListener("click", () => show("screen-home"));
+
+document.getElementById("btn-install").addEventListener("click", () => {
+  // Reutilizamos tu flujo offline como "instalador"
+  window.location.href = "offline.html";
+});
+
+// Por ahora, dejamos los botones de crear/unirse sin lógica.
+// En el siguiente paso los conectamos con Firestore.
+document.getElementById("btn-create-room").addEventListener("click", () => {
+  setError("create-error", "Aún no está conectado a Firestore (siguiente paso).");
+});
+
+document.getElementById("btn-join-room").addEventListener("click", () => {
+  setError("join-error", "Aún no está conectado a Firestore (siguiente paso).");
+});
+
