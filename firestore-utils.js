@@ -7,15 +7,14 @@ function initFirestore() {
   }
 
   try {
-    const firebaseConfig = {
-      apiKey: "AIzaSyAaHu8OXnzUg8c5ogYLwmvTRpGFGfOXZkM",
-      authDomain: "qsdcine.firebaseapp.com",
-      databaseURL: "https://qsdcine-default-rtdb.europe-west1.firebasedatabase.app",
-      projectId: "qsdcine",
-      storageBucket: "qsdcine.appspot.com",
-      messagingSenderId: "701195152100",
-      appId: "1:701195152100:web:2f77da946f74b441fadaf1"
-    };
+const firebaseConfig = {
+  apiKey: "AIzaSyBK9yVaaLXVWayywEUHY_XAZ9q5S7JRKf8",
+  authDomain: "qsdcmulti.firebaseapp.com",
+  projectId: "qsdcmulti",
+  storageBucket: "qsdcmulti.firebasestorage.app",
+  messagingSenderId: "316482043664",
+  appId: "1:316482043664:web:e5da28723cf176b21eef95"
+};
 
     // Evita inicializar Firebase más de una vez
     if (!firebase.apps.length) {
