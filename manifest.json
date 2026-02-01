@@ -1,6 +1,6 @@
 {
-    "name": "¿Qué sabes de cine?",
-    "short_name": "QSDCine",
+    "name": "¿Qué sabes de cine? Multiplayer",
+    "short_name": "QSDCineMulti",
     "start_url": "./index.html",
     "display": "standalone",
     "background_color": "#f0f0f0",
