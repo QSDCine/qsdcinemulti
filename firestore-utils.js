@@ -66,11 +66,34 @@ export function listenRoom(roomId, cb) {
 }
 
 export async function startGame(roomId) {
-  await updateDoc(roomRef(roomId), {
+  const ref = roomRef(roomId);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) throw new Error("Sala no existe");
+
+  const room = snap.data();
+  const playlist = room.playlist || [];
+  const indiceActual = 0;
+
+  const firstMovieIndex = playlist[indiceActual];
+  if (firstMovieIndex == null) throw new Error("Playlist vacía");
+
+  const now = Date.now();
+
+  await updateDoc(ref, {
     estado: "jugando",
-    indiceActual: 0
+    indiceActual,
+    lastScoredIndex: -1,
+    lastScoredAt: now,
+
+    // ✅ primera ronda lista desde el inicio
+    round: {
+      movieIndex: firstMovieIndex,
+      startAt: now + 3000,
+      answers: {}
+    }
   });
 }
+
 
 export async function updateRoom(roomId, data) {
   await updateDoc(roomRef(roomId), data);
