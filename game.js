@@ -336,15 +336,15 @@ function syncAnswerUI(room) {
   const myAns = round.answers?.[playerId];
   const already = !!myAns && myAns.roundStartAt === round.startAt;
 
-  // ✅ Si acabo de enviar pero el snapshot aún no lo refleja, no pises el UI
-  if (!already && pendingAnswerForStartAt === round.startAt) {
+  // ✅ si acabo de enviar pero snapshot aún no lo refleja
+  if (!already && pendingAnswerForStartAt != null && pendingAnswerForStartAt === round.startAt) {
     $("answerInput").disabled = true;
     $("btnAnswer").disabled = true;
     $("answerStatus").textContent = "Respuesta enviada ✅ (sincronizando...)";
     return;
   }
 
-  // ✅ Si ya está confirmado por snapshot, limpia pending
+  // ✅ si ya se confirmó en snapshot, limpias pending
   if (already && pendingAnswerForStartAt === round.startAt) {
     pendingAnswerForStartAt = null;
   }
@@ -434,6 +434,8 @@ if ((room.indiceActual ?? 0) !== lastRoundIndex) {
 }
 
 
+
+syncAnswerUI(room);
 
 if (round.startAt && round.movieIndex != null) {
   const url = getAudioUrlFromMovieIndex(round.movieIndex);
