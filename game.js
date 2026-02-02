@@ -115,7 +115,7 @@ let unsub = null;
 let countdownInterval = null;
 let scheduledPlayTimeout = null;
 let lastScheduledStartAt = null;
-let lastRoundStartAt = -1;
+let lastRoundIndex = -1;
 
 
 function clearTimers() {
@@ -425,11 +425,15 @@ if (room.estado !== "jugando") {
 
   // Reproducir sincronizado
   const round = room.round || {};
-// ✅ Detectar ronda nueva por startAt y resetear UI
-if (round.startAt && round.startAt !== lastRoundStartAt) {
-  lastRoundStartAt = round.startAt;
+// ✅ Detectar ronda nueva y resetear UI
+if ((room.indiceActual ?? 0) !== lastRoundIndex) {
+  lastRoundIndex = room.indiceActual ?? 0;
+  lastScheduledStartAt = null;
+  clearTimers();
   resetAnswerUIForNewRound();
 }
+
+
 
 if (round.startAt && round.movieIndex != null) {
   const url = getAudioUrlFromMovieIndex(round.movieIndex);
