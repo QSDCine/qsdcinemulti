@@ -65,6 +65,7 @@ export function listenRoom(roomId, cb) {
   });
 }
 
+
 export async function startGame(roomId) {
   const ref = roomRef(roomId);
   const snap = await getDoc(ref);
@@ -93,7 +94,6 @@ export async function startGame(roomId) {
     }
   });
 }
-
 
 export async function updateRoom(roomId, data) {
   await updateDoc(roomRef(roomId), data);
