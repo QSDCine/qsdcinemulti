@@ -1,4 +1,4 @@
-import { listenRoom, startGame } from "./firestore-utils.js";
+import { listenRoom, updateRoom } from "./firestore-utils.js";
 
 function $(id) { return document.getElementById(id); }
 
@@ -65,8 +65,10 @@ $("btnLeave").addEventListener("click", () => {
 });
 
 let unsub = null;
+let currentRoom = null;
 
 function renderRoom(room) {
+currentRoom = room;
   if (!room) {
     setError("La sala no existe o ha sido eliminada.");
     return;
@@ -112,11 +114,35 @@ if (room.estado === "jugando") {
 
 $("btnStart").addEventListener("click", async () => {
   try {
-    await startGame(roomId);
+    if (!currentRoom) return setError("No hay datos de sala todavía, espera un segundo y prueba otra vez.");
+
+    const playlist = currentRoom.playlist || [];
+    const firstMovieIndex = playlist[0];
+
+    if (firstMovieIndex == null) {
+      return setError("La sala no tiene playlist. Crea la sala de nuevo.");
+    }
+
+    const now = Date.now();
+
+    await updateRoom(roomId, {
+      estado: "jugando",
+      indiceActual: 0,
+      lastScoredIndex: -1,
+      lastScoredAt: now,
+      round: {
+        movieIndex: firstMovieIndex,
+        startAt: now + 3000,
+        answers: {}
+      }
+    });
+
   } catch (e) {
+    console.error(e);
     setError(e?.message || "No se pudo iniciar la partida.");
   }
 });
+
 
 // Arrancar listener
 if (roomId) {
