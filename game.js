@@ -1,6 +1,8 @@
 import { listenRoom, updateRoom } from "./firestore-utils.js";
 import { REGLAS } from "./reglas.js";
 
+let pendingAnswerForStartAt = null;
+
 function $(id) { return document.getElementById(id); }
 
 function getParam(name) {
@@ -116,8 +118,6 @@ let lastScheduledStartAt = null;
 let lastRoundStartAt = -1;
 
 
-
-
 function clearTimers() {
   if (countdownInterval) clearInterval(countdownInterval);
   countdownInterval = null;
@@ -170,13 +170,16 @@ async function submitAnswer(room) {
   if (!round.startAt || round.movieIndex == null) return;
 
   // ✅ si ya existe mi respuesta en Firestore, no reenviar
-  if (round.answers?.[playerId]) return;
+const myAns = round.answers?.[playerId];
+if (myAns && myAns.roundStartAt === round.startAt) return;
+
 
   const input = $("answerInput");
   const raw = input.value.trim();
   if (!raw) return;
 
   const correct = normalizeAnswer(raw) === normalizeAnswer(getSolutionForMovieIndex(round.movieIndex));
+pendingAnswerForStartAt = round.startAt;
 
   await updateRoom(roomId, {
     [`round.answers.${playerId}`]: {
@@ -331,7 +334,9 @@ function syncAnswerUI(room) {
     return;
   }
 
-  const already = !!round.answers?.[playerId];
+const myAns = round.answers?.[playerId];
+const already = !!myAns && myAns.roundStartAt === round.startAt;
+
 
   $("answerInput").disabled = already;
   $("btnAnswer").disabled = already;
@@ -339,6 +344,18 @@ function syncAnswerUI(room) {
   $("answerStatus").textContent = already ?
      "Respuesta enviada ✅ (esperando al resto)"
     : "Aún no has respondido.";
+
+if (!already && pendingAnswerForStartAt === round.startAt) {
+  $("answerInput").disabled = true;
+  $("btnAnswer").disabled = true;
+  $("answerStatus").textContent = "Respuesta enviada ✅ (sincronizando...)";
+  return;
+}
+
+if (already && pendingAnswerForStartAt === round.startAt) {
+  pendingAnswerForStartAt = null; // ya está confirmada por snapshot
+}
+
 }
 
 
