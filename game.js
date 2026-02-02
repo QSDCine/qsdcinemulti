@@ -180,10 +180,11 @@ async function submitAnswer(room) {
 
   await updateRoom(roomId, {
     [`round.answers.${playerId}`]: {
-      raw,
-      correct,
-      ts: Date.now()
-    }
+  raw,
+  correct,
+  ts: Date.now(),
+  roundStartAt: round.startAt
+}
   });
 
   input.disabled = true;
@@ -197,8 +198,16 @@ async function submitAnswer(room) {
 function allPlayersAnswered(room) {
   const players = Object.keys(room.players || {});
   const answers = room.round?.answers || {};
-  return players.length > 0 && players.every(pid => answers[pid] != null);
+  const startAt = room.round?.startAt;
+
+  if (!startAt) return false;
+
+  return players.length > 0 && players.every(pid => {
+    const a = answers[pid];
+    return a && a.roundStartAt === startAt;
+  });
 }
+
 
 function computePointsFor(mode, correct) {
   // MVP: sin pistas, sin rendición, sin intentos todavía.
