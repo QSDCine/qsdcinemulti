@@ -143,7 +143,7 @@ function scheduleSynchronizedPlay(startAtMs, audioUrl) {
   const tick = () => {
     const now = Date.now();
     const diff = startAtMs - now;
-    const sec = Math.ceil(diff / 1000);
+    const sec = Math.max(0, Math.floor((diff + 999) / 1000));
 
     if (diff <= 0) $("countdownText").textContent = "¡YA!";
     else $("countdownText").textContent = String(sec);
@@ -337,10 +337,27 @@ if (room.estado === "finalizada") {
 }
 
 
-  if (room.estado !== "jugando") {
-    window.location.href = `lobby.html?room=${encodeURIComponent(roomId)}`;
-    return;
-  }
+if (room.estado === "finalizada") {
+  window.location.href = `results.html?room=${encodeURIComponent(roomId)}`;
+  return;
+}
+
+if (room.estado === "esperando") {
+  $("countdownText").textContent = "-";
+  setStatus("Esperando a que el host inicie la partida...");
+  // input bloqueado mientras no hay ronda
+  $("answerInput").disabled = true;
+  $("btnAnswer").disabled = true;
+  $("answerStatus").textContent = "Esperando a que empiece la ronda...";
+  return;
+}
+
+if (room.estado !== "jugando") {
+  // estados raros -> al lobby
+  window.location.href = `lobby.html?room=${encodeURIComponent(roomId)}`;
+  return;
+}
+
 
   setError("");
 
