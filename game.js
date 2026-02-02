@@ -101,7 +101,9 @@ let unsub = null;
 let countdownInterval = null;
 let scheduledPlayTimeout = null;
 let lastScheduledStartAt = null;
-let lastRoundStartAt = null;
+let lastRoundStartAt = -1;
+let submittedRoundStartAt = null; // startAt de la ronda en la que YO ya respondí
+
 
 
 function clearTimers() {
@@ -152,6 +154,7 @@ function scheduleSynchronizedPlay(startAtMs, audioUrl) {
 
 // --- Respuesta: escribir a Firestore ---
 async function submitAnswer(room) {
+if (submittedRoundStartAt === room.round?.startAt) return;
   const input = $("answerInput");
   const raw = input.value.trim();
   if (!raw) return;
@@ -171,6 +174,7 @@ async function submitAnswer(room) {
       ts: Date.now()
     }
   });
+submittedRoundStartAt = room.round?.startAt ?? -1;
 
   input.disabled = true;
   $("btnAnswer").disabled = true;
@@ -280,16 +284,22 @@ async function ensureRoundInitialized(room) {
 
 function syncAnswerUI(room) {
   const round = room.round || {};
-  const already = round.answers?.[playerId];
+  const hasSubmittedThisRound = (submittedRoundStartAt === round.startAt);
 
-  $("answerInput").disabled = !!already;
-  $("btnAnswer").disabled = !!already;
-  $("answerStatus").textContent = already ? "Ya has respondido ✅" : "Aún no has respondido.";
+  $("answerInput").disabled = hasSubmittedThisRound;
+  $("btnAnswer").disabled = hasSubmittedThisRound;
+
+  $("answerStatus").textContent = hasSubmittedThisRound ?
+     "Respuesta enviada ✅ (esperando al resto)"
+    : "Aún no has respondido.";
 }
+
 
 function resetAnswerUIForNewRound() {
   const input = $("answerInput");
   const btn = $("btnAnswer");
+
+  submittedRoundStartAt = -1; // ✅ importante
 
   input.value = "";
   input.disabled = false;
@@ -297,10 +307,9 @@ function resetAnswerUIForNewRound() {
 
   $("answerStatus").textContent = "Nueva ronda: escribe tu respuesta 👇";
 
-  // foco automático para que puedan teclear directo
-  // (pequeño timeout para asegurar que el DOM está pintado)
   setTimeout(() => input.focus(), 0);
 }
+
 
 
 function renderRoom(room) {
@@ -345,13 +354,19 @@ if (round.startAt && round.startAt !== lastRoundStartAt) {
   resetAnswerUIForNewRound();
 }
 
-  if (round.startAt && round.movieIndex != null) {
-    const url = getAudioUrlFromMovieIndex(round.movieIndex);
-    scheduleSynchronizedPlay(round.startAt, url);
-  } else {
-    $("countdownText").textContent = "-";
-    setStatus("Esperando sincronización...");
-  }
+if (round.startAt && round.movieIndex != null) {
+  const url = getAudioUrlFromMovieIndex(round.movieIndex);
+  scheduleSynchronizedPlay(round.startAt, url);
+} else {
+  $("countdownText").textContent = "-";
+  setStatus("Esperando sincronización...");
+
+  // ✅ Evita estados fantasma del input si aún no hay ronda lista
+  $("answerInput").disabled = true;
+  $("btnAnswer").disabled = true;
+  $("answerStatus").textContent = "Esperando a que empiece la ronda...";
+}
+
 
   // UI respuesta
   syncAnswerUI(room);
