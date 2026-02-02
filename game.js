@@ -192,6 +192,7 @@ async function submitAnswer(room) {
 }
 
 
+
 // --- Scoring: lo hace SOLO el host cuando todos respondieron ---
 function allPlayersAnswered(room) {
   const players = Object.keys(room.players || {});
@@ -252,22 +253,22 @@ async function hostScoreAndAdvance(room) {
     updates[`players.${pid}.mejorRacha`] = best;
   }
 
-  // Marcar ronda como puntuada
-  updates["round.scoredAt"] = Date.now();
+// Avanzar a siguiente (o finalizar)
+const nextIndex = (room.indiceActual ?? 0) + 1;
+const total = room.config?.numPeliculas ?? (room.playlist?.length ?? 0);
 
-  // Avanzar a siguiente (o finalizar)
-  const nextIndex = (room.indiceActual ?? 0) + 1;
-  const total = room.config?.numPeliculas ?? (room.playlist?.length ?? 0);
-
+// ✅ Guardamos "scoredAt" SIN tocar round.scoredAt como subcampo
+// (así evitamos el conflicto round + round.scoredAt)
 if (nextIndex >= total) {
   updates.estado = "finalizada";
+  updates.round = { scoredAt: Date.now() };
 } else {
   updates.indiceActual = nextIndex;
-  // Reset de la ronda para que el host inicialice la siguiente
-  updates.round = {};
+  // dejamos round en modo "vacío pero marcado"
+  updates.round = { scoredAt: Date.now() };
 }
 
-  await updateRoom(roomId, updates);
+await updateRoom(roomId, updates);
 }
 
 // Inicializar ronda si falta (solo host)
