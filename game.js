@@ -291,12 +291,12 @@ function renderRoom(room) {
     return;
   }
 
-  // Fin de partida (por ahora vuelve al lobby; luego haremos results.html)
-  if (room.estado === "finalizada") {
-    setStatus("Partida finalizada. (Siguiente paso: pantalla de resultados)");
-    // Puedes redirigir a results.html cuando lo creemos
-    return;
-  }
+  // Fin de partida
+if (room.estado === "finalizada") {
+  window.location.href = `results.html?room=${encodeURIComponent(roomId)}`;
+  return;
+}
+
 
   if (room.estado !== "jugando") {
     window.location.href = `lobby.html?room=${encodeURIComponent(roomId)}`;
