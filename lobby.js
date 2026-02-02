@@ -7,14 +7,26 @@ function getParam(name) {
 }
 
 function getOrCreatePlayerId() {
-  const key = "qsdcmulti_playerId";
-  let id = localStorage.getItem(key);
-  if (!id) {
-    id = crypto.randomUUID();
-    localStorage.setItem(key, id);
+  // Persistente por dispositivo
+  const deviceKey = "qsdcmulti_deviceId";
+  let deviceId = localStorage.getItem(deviceKey);
+  if (!deviceId) {
+    deviceId = crypto.randomUUID();
+    localStorage.setItem(deviceKey, deviceId);
   }
-  return id;
+
+  // Único por pestaña/sesión (no se comparte entre tabs)
+  const tabKey = "qsdcmulti_tabId";
+  let tabId = sessionStorage.getItem(tabKey);
+  if (!tabId) {
+    tabId = crypto.randomUUID();
+    sessionStorage.setItem(tabKey, tabId);
+  }
+
+  // PlayerId final (único incluso en dos pestañas del mismo navegador)
+  return `${deviceId}:${tabId}`;
 }
+
 
 function setError(msg) {
   const el = $("lobbyError");
