@@ -228,7 +228,7 @@ async function hostScoreAndAdvance(room) {
   if (!round.answers) return;
 
   // Evitar doble scoring
-  if (round.scoredAt) return;
+ if (room.lastScoredIndex === (room.indiceActual ?? 0)) return;
 
   if (!allPlayersAnswered(room)) return;
 
@@ -263,21 +263,37 @@ async function hostScoreAndAdvance(room) {
   }
 
 // Avanzar a siguiente (o finalizar)
-const nextIndex = (room.indiceActual ?? 0) + 1;
-const total = room.config?.numPeliculas ?? (room.playlist?.length ?? 0);
+  // ✅ Guardrail: si ya puntuamos este índice, no repetir
+  if (room.lastScoredIndex === (room.indiceActual ?? 0)) return;
 
-// ✅ Guardamos "scoredAt" SIN tocar round.scoredAt como subcampo
-// (así evitamos el conflicto round + round.scoredAt)
-if (nextIndex >= total) {
-  updates.estado = "finalizada";
-  updates.round = { scoredAt: Date.now() };
-} else {
-  updates.indiceActual = nextIndex;
-  // dejamos round en modo "vacío pero marcado"
-  updates.round = { scoredAt: Date.now() };
-}
+  const currentIndex = room.indiceActual ?? 0;
+  const nextIndex = currentIndex + 1;
+  const total = room.config?.numPeliculas ?? (room.playlist?.length ?? 0);
+  const now = Date.now();
 
-await updateRoom(roomId, updates);
+  // Marcar que este índice ya fue puntuado
+  updates.lastScoredIndex = currentIndex;
+  updates.lastScoredAt = now;
+
+  if (nextIndex >= total) {
+    // Finaliza partida
+    updates.estado = "finalizada";
+    updates.round = { finishedAt: now };
+  } else {
+    // ✅ Crea YA la siguiente ronda
+    const playlist = room.playlist || [];
+    const nextMovieIndex = playlist[nextIndex];
+
+    updates.indiceActual = nextIndex;
+
+    updates.round = {
+      movieIndex: nextMovieIndex,
+      startAt: now + 3000,
+      answers: {}
+    };
+  }
+
+  await updateRoom(roomId, updates);
 }
 
 // Inicializar ronda si falta (solo host)
@@ -385,7 +401,7 @@ if (room.estado !== "jugando") {
   renderScores(room.players);
 
   // Inicializar ronda (host)
-  ensureRoundInitialized(room).catch(err => console.error("init round:", err));
+ // ensureRoundInitialized(room).catch(err => console.error("init round:", err));
 
   // Reproducir sincronizado
   const round = room.round || {};
