@@ -76,3 +76,7 @@ export async function updateRoom(roomId, data) {
   await updateDoc(roomRef(roomId), data);
 }
 
+export async function updateRoomFields(roomId, fieldMap) {
+  // alias por claridad, exactamente lo mismo que updateRoom
+  await updateRoom(roomId, fieldMap);
+}
