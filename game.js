@@ -101,6 +101,8 @@ let unsub = null;
 let countdownInterval = null;
 let scheduledPlayTimeout = null;
 let lastScheduledStartAt = null;
+let lastRoundStartAt = null;
+
 
 function clearTimers() {
   if (countdownInterval) clearInterval(countdownInterval);
@@ -172,7 +174,7 @@ async function submitAnswer(room) {
 
   input.disabled = true;
   $("btnAnswer").disabled = true;
-  $("answerStatus").textContent = "Respuesta enviada ✅";
+  $("answerStatus").textContent = "Respuesta enviada ✅ (esperando al resto)";
 }
 
 // --- Scoring: lo hace SOLO el host cuando todos respondieron ---
@@ -285,6 +287,22 @@ function syncAnswerUI(room) {
   $("answerStatus").textContent = already ? "Ya has respondido ✅" : "Aún no has respondido.";
 }
 
+function resetAnswerUIForNewRound() {
+  const input = $("answerInput");
+  const btn = $("btnAnswer");
+
+  input.value = "";
+  input.disabled = false;
+  btn.disabled = false;
+
+  $("answerStatus").textContent = "Nueva ronda: escribe tu respuesta 👇";
+
+  // foco automático para que puedan teclear directo
+  // (pequeño timeout para asegurar que el DOM está pintado)
+  setTimeout(() => input.focus(), 0);
+}
+
+
 function renderRoom(room) {
   if (!room) {
     setError("La sala no existe o ha sido eliminada.");
@@ -321,6 +339,12 @@ if (room.estado === "finalizada") {
 
   // Reproducir sincronizado
   const round = room.round || {};
+// ✅ Detectar ronda nueva por startAt y resetear UI
+if (round.startAt && round.startAt !== lastRoundStartAt) {
+  lastRoundStartAt = round.startAt;
+  resetAnswerUIForNewRound();
+}
+
   if (round.startAt && round.movieIndex != null) {
     const url = getAudioUrlFromMovieIndex(round.movieIndex);
     scheduleSynchronizedPlay(round.startAt, url);
