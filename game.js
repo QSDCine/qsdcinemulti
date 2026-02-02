@@ -242,13 +242,13 @@ async function hostScoreAndAdvance(room) {
   const nextIndex = (room.indiceActual ?? 0) + 1;
   const total = room.config?.numPeliculas ?? (room.playlist?.length ?? 0);
 
-  if (nextIndex >= total) {
-    updates["estado"] = "finalizada";
-  } else {
-    updates["indiceActual"] = nextIndex;
-    // Reset de la ronda para que el host inicialice la siguiente
-    updates["round"] = {};
-  }
+if (nextIndex >= total) {
+  updates.estado = "finalizada";
+} else {
+  updates.indiceActual = nextIndex;
+  // Reset de la ronda para que el host inicialice la siguiente
+  updates.round = {};
+}
 
   await updateRoom(roomId, updates);
 }
