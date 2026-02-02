@@ -114,7 +114,7 @@ let countdownInterval = null;
 let scheduledPlayTimeout = null;
 let lastScheduledStartAt = null;
 let lastRoundStartAt = -1;
-let submittedRoundStartAt = -1; // startAt de la ronda en la que YO ya respondí
+
 
 
 
@@ -166,19 +166,18 @@ function scheduleSynchronizedPlay(startAtMs, audioUrl) {
 
 // --- Respuesta: escribir a Firestore ---
 async function submitAnswer(room) {
-if (submittedRoundStartAt === room.round?.startAt) return;
+  const round = room.round || {};
+  if (!round.startAt || round.movieIndex == null) return;
+
+  // ✅ si ya existe mi respuesta en Firestore, no reenviar
+  if (round.answers?.[playerId]) return;
+
   const input = $("answerInput");
   const raw = input.value.trim();
   if (!raw) return;
 
-  const round = room.round || {};
-  const movieIndex = round.movieIndex;
-  if (movieIndex == null) return;
+  const correct = normalizeAnswer(raw) === normalizeAnswer(getSolutionForMovieIndex(round.movieIndex));
 
-  const correct = normalizeAnswer(raw) === normalizeAnswer(getSolutionForMovieIndex(movieIndex));
-
-  // Guardamos la respuesta en la sala (por jugador)
-  // Estructura: round.answers[playerId] = { raw, correct, ts }
   await updateRoom(roomId, {
     [`round.answers.${playerId}`]: {
       raw,
@@ -186,12 +185,12 @@ if (submittedRoundStartAt === room.round?.startAt) return;
       ts: Date.now()
     }
   });
-submittedRoundStartAt = room.round?.startAt ?? -1;
 
   input.disabled = true;
   $("btnAnswer").disabled = true;
   $("answerStatus").textContent = "Respuesta enviada ✅ (esperando al resto)";
 }
+
 
 // --- Scoring: lo hace SOLO el host cuando todos respondieron ---
 function allPlayersAnswered(room) {
@@ -296,31 +295,40 @@ async function ensureRoundInitialized(room) {
 
 function syncAnswerUI(room) {
   const round = room.round || {};
-  const hasSubmittedThisRound = (submittedRoundStartAt === round.startAt);
+  const hasRound = !!round.startAt && round.movieIndex != null;
 
-  $("answerInput").disabled = hasSubmittedThisRound;
-  $("btnAnswer").disabled = hasSubmittedThisRound;
+  // Si aún no hay ronda lista, bloqueamos
+  if (!hasRound) {
+    $("answerInput").disabled = true;
+    $("btnAnswer").disabled = true;
+    $("answerStatus").textContent = "Esperando a que empiece la ronda...";
+    return;
+  }
 
-  $("answerStatus").textContent = hasSubmittedThisRound ?
+  const already = !!round.answers?.[playerId];
+
+  $("answerInput").disabled = already;
+  $("btnAnswer").disabled = already;
+
+  $("answerStatus").textContent = already ?
      "Respuesta enviada ✅ (esperando al resto)"
     : "Aún no has respondido.";
 }
+
 
 
 function resetAnswerUIForNewRound() {
   const input = $("answerInput");
   const btn = $("btnAnswer");
 
-  submittedRoundStartAt = -1; // ✅ importante
-
   input.value = "";
   input.disabled = false;
   btn.disabled = false;
 
   $("answerStatus").textContent = "Nueva ronda: escribe tu respuesta 👇";
-
   setTimeout(() => input.focus(), 0);
 }
+
 
 
 
@@ -331,12 +339,6 @@ function renderRoom(room) {
   }
 
   // Fin de partida
-if (room.estado === "finalizada") {
-  window.location.href = `results.html?room=${encodeURIComponent(roomId)}`;
-  return;
-}
-
-
 if (room.estado === "finalizada") {
   window.location.href = `results.html?room=${encodeURIComponent(roomId)}`;
   return;
