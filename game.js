@@ -102,7 +102,7 @@ let countdownInterval = null;
 let scheduledPlayTimeout = null;
 let lastScheduledStartAt = null;
 let lastRoundStartAt = -1;
-let submittedRoundStartAt = null; // startAt de la ronda en la que YO ya respondí
+let submittedRoundStartAt = -1; // startAt de la ronda en la que YO ya respondí
 
 
 
