@@ -230,8 +230,7 @@ async function hostScoreAndAdvance(room) {
   const round = room.round || {};
   if (!round.answers) return;
 
-  // Evitar doble scoring
- if (room.lastScoredIndex === (room.indiceActual ?? 0)) return;
+
 
   if (!allPlayersAnswered(room)) return;
 
@@ -267,6 +266,7 @@ async function hostScoreAndAdvance(room) {
 
 // Avanzar a siguiente (o finalizar)
   // ✅ Guardrail: si ya puntuamos este índice, no repetir
+  // Evitar doble scoring
   if (room.lastScoredIndex === (room.indiceActual ?? 0)) return;
 
   const currentIndex = room.indiceActual ?? 0;
@@ -326,7 +326,6 @@ function syncAnswerUI(room) {
   const round = room.round || {};
   const hasRound = !!round.startAt && round.movieIndex != null;
 
-  // Si aún no hay ronda lista, bloqueamos
   if (!hasRound) {
     $("answerInput").disabled = true;
     $("btnAnswer").disabled = true;
@@ -334,9 +333,21 @@ function syncAnswerUI(room) {
     return;
   }
 
-const myAns = round.answers?.[playerId];
-const already = !!myAns && myAns.roundStartAt === round.startAt;
+  const myAns = round.answers?.[playerId];
+  const already = !!myAns && myAns.roundStartAt === round.startAt;
 
+  // ✅ Si acabo de enviar pero el snapshot aún no lo refleja, no pises el UI
+  if (!already && pendingAnswerForStartAt === round.startAt) {
+    $("answerInput").disabled = true;
+    $("btnAnswer").disabled = true;
+    $("answerStatus").textContent = "Respuesta enviada ✅ (sincronizando...)";
+    return;
+  }
+
+  // ✅ Si ya está confirmado por snapshot, limpia pending
+  if (already && pendingAnswerForStartAt === round.startAt) {
+    pendingAnswerForStartAt = null;
+  }
 
   $("answerInput").disabled = already;
   $("btnAnswer").disabled = already;
@@ -344,25 +355,16 @@ const already = !!myAns && myAns.roundStartAt === round.startAt;
   $("answerStatus").textContent = already ?
      "Respuesta enviada ✅ (esperando al resto)"
     : "Aún no has respondido.";
-
-if (!already && pendingAnswerForStartAt === round.startAt) {
-  $("answerInput").disabled = true;
-  $("btnAnswer").disabled = true;
-  $("answerStatus").textContent = "Respuesta enviada ✅ (sincronizando...)";
-  return;
 }
 
-if (already && pendingAnswerForStartAt === round.startAt) {
-  pendingAnswerForStartAt = null; // ya está confirmada por snapshot
-}
-
-}
 
 
 
 function resetAnswerUIForNewRound() {
   const input = $("answerInput");
   const btn = $("btnAnswer");
+
+  pendingAnswerForStartAt = null;
 
   input.value = "";
   input.disabled = false;
@@ -371,6 +373,7 @@ function resetAnswerUIForNewRound() {
   $("answerStatus").textContent = "Nueva ronda: escribe tu respuesta 👇";
   setTimeout(() => input.focus(), 0);
 }
+
 
 
 
