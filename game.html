@@ -30,12 +30,24 @@
     <div class="card">
       <h2>Audio</h2>
       <audio id="audio" controls controlsList="nodownload"></audio>
+      <div style="margin-top: 12px;">
+  <input id="answerInput" type="text" placeholder="Tu respuesta..." autocomplete="off" />
+  <button id="btnAnswer" class="primary">Enviar</button>
+</div>
+
+<p id="answerStatus" class="hint" style="margin-top: 8px;">Aún no has respondido.</p>
+
     </div>
 
     <div class="card">
       <h2>Jugadores</h2>
       <ul id="playersList"></ul>
     </div>
+<div class="card">
+  <h2>Marcador</h2>
+  <ul id="scoreList"></ul>
+</div>
+
 
     <div class="row">
       <button id="btnBack" class="secondary">Volver al lobby</button>

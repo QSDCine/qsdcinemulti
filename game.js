@@ -1,4 +1,5 @@
 import { listenRoom, updateRoom } from "./firestore-utils.js";
+import { REGLAS } from "./reglas.js";
 
 function $(id) { return document.getElementById(id); }
 
@@ -28,40 +29,24 @@ function setError(msg) {
   el.style.display = "block";
 }
 
-const roomId = (getParam("room") || "").toUpperCase().trim();
-const playerId = getOrCreatePlayerId();
-
-if (!roomId) {
-  setError("Falta el parámetro de sala. Vuelve al lobby.");
+function normalizeAnswer(s) {
+  return (s || "")
+    .toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9 ]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
-$("roomIdText").textContent = roomId;
+// ⚠️ TEMPORAL: sustituiremos esto por tu array real más adelante
+function getSolutionForMovieIndex(movieIndex) {
+  // Por ahora, para probar: la respuesta correcta es el número del índice
+  return String(movieIndex);
+}
 
-// Volver al lobby
-$("btnBack").addEventListener("click", () => {
-  window.location.href = `lobby.html?room=${encodeURIComponent(roomId)}`;
-});
-
-// AUDIO: aquí vamos a usar una función placeholder.
-// Luego la conectamos a tu array real (script.js) sin dolor.
+// ⚠️ TEMPORAL: url por índice. Luego lo conectamos a tu estructura real
 function getAudioUrlFromMovieIndex(movieIndex) {
-  // Ajusta esto cuando conectemos tu array real.
-  // Ejemplo típico si tus mp3 están en /audio/xxx.mp3:
-  // return `audio/${movieIndex}.mp3`;
   return `audio/${movieIndex}.mp3`;
-}
-
-let unsub = null;
-let countdownInterval = null;
-let scheduledPlayTimeout = null;
-let lastScheduledStartAt = null;
-
-function clearTimers() {
-  if (countdownInterval) clearInterval(countdownInterval);
-  countdownInterval = null;
-
-  if (scheduledPlayTimeout) clearTimeout(scheduledPlayTimeout);
-  scheduledPlayTimeout = null;
 }
 
 function setStatus(txt) {
@@ -80,8 +65,52 @@ function renderPlayers(playersObj) {
   }
 }
 
+function renderScores(playersObj) {
+  const ul = $("scoreList");
+  ul.innerHTML = "";
+  const arr = Object.entries(playersObj || {}).map(([id, p]) => ({
+    id,
+    nick: p.nick || "?",
+    puntos: p.puntos ?? 0,
+    racha: p.racha ?? 0
+  }));
+
+  // ordenar por puntos desc
+  arr.sort((a, b) => (b.puntos - a.puntos) || a.nick.localeCompare(b.nick));
+
+  for (const p of arr) {
+    const li = document.createElement("li");
+    li.textContent = `${p.nick}: ${p.puntos} pts (racha: ${p.racha})`;
+    ul.appendChild(li);
+  }
+}
+
+const roomId = (getParam("room") || "").toUpperCase().trim();
+const playerId = getOrCreatePlayerId();
+
+if (!roomId) {
+  setError("Falta el parámetro de sala. Vuelve al lobby.");
+}
+
+$("roomIdText").textContent = roomId;
+$("btnBack").addEventListener("click", () => {
+  window.location.href = `lobby.html?room=${encodeURIComponent(roomId)}`;
+});
+
+let unsub = null;
+let countdownInterval = null;
+let scheduledPlayTimeout = null;
+let lastScheduledStartAt = null;
+
+function clearTimers() {
+  if (countdownInterval) clearInterval(countdownInterval);
+  countdownInterval = null;
+
+  if (scheduledPlayTimeout) clearTimeout(scheduledPlayTimeout);
+  scheduledPlayTimeout = null;
+}
+
 function scheduleSynchronizedPlay(startAtMs, audioUrl) {
-  // Evitar reprogramar si es el mismo startAt
   if (lastScheduledStartAt === startAtMs) return;
   lastScheduledStartAt = startAtMs;
 
@@ -95,23 +124,18 @@ function scheduleSynchronizedPlay(startAtMs, audioUrl) {
 
   setStatus("Preparando audio...");
 
-  // Countdown visible hacia startAt
   const tick = () => {
     const now = Date.now();
     const diff = startAtMs - now;
     const sec = Math.ceil(diff / 1000);
 
-    if (diff <= 0) {
-      $("countdownText").textContent = "¡YA!";
-    } else {
-      $("countdownText").textContent = String(sec);
-    }
+    if (diff <= 0) $("countdownText").textContent = "¡YA!";
+    else $("countdownText").textContent = String(sec);
   };
 
   tick();
   countdownInterval = setInterval(tick, 200);
 
-  // Programar play exacto
   const delay = Math.max(0, startAtMs - Date.now());
   scheduledPlayTimeout = setTimeout(async () => {
     try {
@@ -124,8 +148,113 @@ function scheduleSynchronizedPlay(startAtMs, audioUrl) {
   }, delay);
 }
 
+// --- Respuesta: escribir a Firestore ---
+async function submitAnswer(room) {
+  const input = $("answerInput");
+  const raw = input.value.trim();
+  if (!raw) return;
+
+  const round = room.round || {};
+  const movieIndex = round.movieIndex;
+  if (movieIndex == null) return;
+
+  const correct = normalizeAnswer(raw) === normalizeAnswer(getSolutionForMovieIndex(movieIndex));
+
+  // Guardamos la respuesta en la sala (por jugador)
+  // Estructura: round.answers[playerId] = { raw, correct, ts }
+  await updateRoom(roomId, {
+    [`round.answers.${playerId}`]: {
+      raw,
+      correct,
+      ts: Date.now()
+    }
+  });
+
+  input.disabled = true;
+  $("btnAnswer").disabled = true;
+  $("answerStatus").textContent = "Respuesta enviada ✅";
+}
+
+// --- Scoring: lo hace SOLO el host cuando todos respondieron ---
+function allPlayersAnswered(room) {
+  const players = Object.keys(room.players || {});
+  const answers = room.round?.answers || {};
+  return players.length > 0 && players.every(pid => answers[pid] != null);
+}
+
+function computePointsFor(mode, correct) {
+  // MVP: sin pistas, sin rendición, sin intentos todavía.
+  // Locura: +10 / -20
+  // Extremo: +7 / -3
+  // Normal y Contrarreloj: +5 / 0
+  if (mode === "locura") return correct ? 10 : -20;
+  if (mode === "extremo") return correct ? 7 : -3;
+  // normal / contrarreloj
+  return correct ? 5 : 0;
+}
+
+async function hostScoreAndAdvance(room) {
+  const isHost = room.hostId === playerId;
+  if (!isHost) return;
+
+  const round = room.round || {};
+  if (!round.answers) return;
+
+  // Evitar doble scoring
+  if (round.scoredAt) return;
+
+  if (!allPlayersAnswered(room)) return;
+
+  const mode = room.config?.modoJuego || "normal";
+  const answers = round.answers;
+
+  // Preparar updates
+  const updates = {};
+  const playersObj = room.players || {};
+
+  for (const [pid, pdata] of Object.entries(playersObj)) {
+    const ans = answers[pid];
+    const correct = !!ans?.correct;
+
+    const delta = computePointsFor(mode, correct);
+    const prevPts = pdata.puntos ?? 0;
+    const prevRacha = pdata.racha ?? 0;
+    const prevBest = pdata.mejorRacha ?? 0;
+
+    const newRacha = correct ? prevRacha + 1 : 0;
+    const best = Math.max(prevBest, newRacha);
+
+    // Bonus por racha cada 10 (igual que tu juego)
+    let bonus = 0;
+    if (correct && newRacha > 0 && newRacha % 10 === 0) {
+      bonus = newRacha; // +10, +20, ...
+    }
+
+    updates[`players.${pid}.puntos`] = prevPts + delta + bonus;
+    updates[`players.${pid}.racha`] = newRacha;
+    updates[`players.${pid}.mejorRacha`] = best;
+  }
+
+  // Marcar ronda como puntuada
+  updates["round.scoredAt"] = Date.now();
+
+  // Avanzar a siguiente (o finalizar)
+  const nextIndex = (room.indiceActual ?? 0) + 1;
+  const total = room.config?.numPeliculas ?? (room.playlist?.length ?? 0);
+
+  if (nextIndex >= total) {
+    updates["estado"] = "finalizada";
+  } else {
+    updates["indiceActual"] = nextIndex;
+    // Reset de la ronda para que el host inicialice la siguiente
+    updates["round"] = {};
+  }
+
+  await updateRoom(roomId, updates);
+}
+
+// Inicializar ronda si falta (solo host)
 async function ensureRoundInitialized(room) {
-  // Si no hay round o le falta startAt, lo inicializa SOLO el host.
   const isHost = room.hostId === playerId;
   if (!isHost) return;
 
@@ -136,15 +265,24 @@ async function ensureRoundInitialized(room) {
   const idx = room.indiceActual ?? 0;
   const movieIndex = playlist[idx];
 
-  // startAt 3 segundos en el futuro
   const startAt = Date.now() + 3000;
 
   await updateRoom(roomId, {
     round: {
       movieIndex,
-      startAt
+      startAt,
+      answers: {} // empezamos limpio
     }
   });
+}
+
+function syncAnswerUI(room) {
+  const round = room.round || {};
+  const already = round.answers?.[playerId];
+
+  $("answerInput").disabled = !!already;
+  $("btnAnswer").disabled = !!already;
+  $("answerStatus").textContent = already ? "Ya has respondido ✅" : "Aún no has respondido.";
 }
 
 function renderRoom(room) {
@@ -153,8 +291,14 @@ function renderRoom(room) {
     return;
   }
 
+  // Fin de partida (por ahora vuelve al lobby; luego haremos results.html)
+  if (room.estado === "finalizada") {
+    setStatus("Partida finalizada. (Siguiente paso: pantalla de resultados)");
+    // Puedes redirigir a results.html cuando lo creemos
+    return;
+  }
+
   if (room.estado !== "jugando") {
-    // Si vuelve a lobby o finaliza, redirigimos al lobby
     window.location.href = `lobby.html?room=${encodeURIComponent(roomId)}`;
     return;
   }
@@ -170,13 +314,12 @@ function renderRoom(room) {
   $("roundText").textContent = `${idx + 1} / ${total}`;
 
   renderPlayers(room.players);
+  renderScores(room.players);
 
-  // Inicializar la ronda si hace falta (solo host)
-  ensureRoundInitialized(room).catch(err => {
-    console.error("No se pudo inicializar ronda:", err);
-  });
+  // Inicializar ronda (host)
+  ensureRoundInitialized(room).catch(err => console.error("init round:", err));
 
-  // Si round existe, programamos audio sincronizado
+  // Reproducir sincronizado
   const round = room.round || {};
   if (round.startAt && round.movieIndex != null) {
     const url = getAudioUrlFromMovieIndex(round.movieIndex);
@@ -185,10 +328,43 @@ function renderRoom(room) {
     $("countdownText").textContent = "-";
     setStatus("Esperando sincronización...");
   }
+
+  // UI respuesta
+  syncAnswerUI(room);
+
+  // Scoring + avanzar (host)
+  hostScoreAndAdvance(room).catch(err => console.error("score:", err));
 }
 
+// Botón enviar respuesta
+$("btnAnswer").addEventListener("click", async () => {
+  // Necesitamos el room actual; lo mantenemos en una variable
+  if (!window.__currentRoom) return;
+  try {
+    await submitAnswer(window.__currentRoom);
+  } catch (e) {
+    setError(e?.message || "No se pudo enviar la respuesta.");
+  }
+});
+
+// Enter en input
+$("answerInput").addEventListener("keydown", async (e) => {
+  if (e.key === "Enter") {
+    if (!window.__currentRoom) return;
+    try {
+      await submitAnswer(window.__currentRoom);
+    } catch (err) {
+      setError(err?.message || "No se pudo enviar la respuesta.");
+    }
+  }
+});
+
+// Listen
 if (roomId) {
-  unsub = listenRoom(roomId, renderRoom);
+  unsub = listenRoom(roomId, (room) => {
+    window.__currentRoom = room;
+    renderRoom(room);
+  });
 }
 
 window.addEventListener("beforeunload", () => {
