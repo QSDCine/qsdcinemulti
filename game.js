@@ -2,7 +2,6 @@ import { listenRoom, updateRoom } from "./firestore-utils.js";
 import { REGLAS } from "./reglas.js";
 
 let pendingAnswerForStartAt = null;
-let submittedStartAt = null;
 
 function $(id) { return document.getElementById(id); }
 
@@ -27,10 +26,8 @@ function getOrCreatePlayerId() {
     sessionStorage.setItem(tabKey, tabId);
   }
 
-  // PlayerId final (único incluso en dos pestañas del mismo navegador)
   return `${deviceId}:${tabId}`;
 }
-
 
 function setError(msg) {
   const el = $("gameError");
@@ -53,13 +50,12 @@ function normalizeAnswer(s) {
     .trim();
 }
 
-// ⚠️ TEMPORAL: sustituiremos esto por tu array real más adelante
+// ⚠️ TEMPORAL
 function getSolutionForMovieIndex(movieIndex) {
-  // Por ahora, para probar: la respuesta correcta es el número del índice
   return String(movieIndex);
 }
 
-// ⚠️ TEMPORAL: url por índice. Luego lo conectamos a tu estructura real
+// ⚠️ TEMPORAL
 function getAudioUrlFromMovieIndex(movieIndex) {
   return `audio/${movieIndex}.mp3`;
 }
@@ -90,7 +86,6 @@ function renderScores(playersObj) {
     racha: p.racha ?? 0
   }));
 
-  // ordenar por puntos desc
   arr.sort((a, b) => (b.puntos - a.puntos) || a.nick.localeCompare(b.nick));
 
   for (const p of arr) {
@@ -103,11 +98,10 @@ function renderScores(playersObj) {
 const roomId = (getParam("room") || "").toUpperCase().trim();
 const playerId = getOrCreatePlayerId();
 
-if (!roomId) {
-  setError("Falta el parámetro de sala. Vuelve al lobby.");
-}
+if (!roomId) setError("Falta el parámetro de sala. Vuelve al lobby.");
 
 $("roomIdText").textContent = roomId;
+
 $("btnBack").addEventListener("click", () => {
   window.location.href = `lobby.html?room=${encodeURIComponent(roomId)}`;
 });
@@ -115,10 +109,13 @@ $("btnBack").addEventListener("click", () => {
 let unsub = null;
 let countdownInterval = null;
 let scheduledPlayTimeout = null;
+
 let lastScheduledStartAt = null;
 let lastRoundIndex = -1;
 
-
+// ------------------------------------------------------
+// Timers / audio sync
+// ------------------------------------------------------
 function clearTimers() {
   if (countdownInterval) clearInterval(countdownInterval);
   countdownInterval = null;
@@ -145,9 +142,7 @@ function scheduleSynchronizedPlay(startAtMs, audioUrl) {
     const now = Date.now();
     const diff = startAtMs - now;
     const sec = Math.max(0, Math.floor((diff + 999) / 1000));
-
-    if (diff <= 0) $("countdownText").textContent = "¡YA!";
-    else $("countdownText").textContent = String(sec);
+    $("countdownText").textContent = diff <= 0 ? "¡YA!" : String(sec);
   };
 
   tick();
@@ -165,41 +160,68 @@ function scheduleSynchronizedPlay(startAtMs, audioUrl) {
   }, delay);
 }
 
-// --- Respuesta: escribir a Firestore ---
+// ------------------------------------------------------
+// Round init (host)
+// ------------------------------------------------------
+async function ensureRoundInitialized(room) {
+  const isHost = room.hostId === playerId;
+  if (!isHost) return;
+
+  const round = room.round || {};
+  if (round.startAt && round.movieIndex != null) return;
+
+  const playlist = room.playlist || [];
+  const idx = room.indiceActual ?? 0;
+  const movieIndex = playlist[idx];
+
+  // Si no hay playlist o índice inválido, no init
+  if (movieIndex == null) return;
+
+  const startAt = Date.now() + 3000;
+
+  await updateRoom(roomId, {
+    round: { movieIndex, startAt, answers: {} }
+  });
+}
+
+// ------------------------------------------------------
+// Submit answer
+// ------------------------------------------------------
 async function submitAnswer(room) {
   const round = room.round || {};
   if (!round.startAt || round.movieIndex == null) return;
 
-  // ✅ si ya existe mi respuesta en Firestore, no reenviar
-const myAns = round.answers?.[playerId];
-if (myAns && myAns.roundStartAt === round.startAt) return;
-
+  // si ya existe mi respuesta en Firestore, no reenviar
+  const myAns = round.answers?.[playerId];
+  if (myAns && myAns.roundStartAt === round.startAt) return;
 
   const input = $("answerInput");
   const raw = input.value.trim();
   if (!raw) return;
 
   const correct = normalizeAnswer(raw) === normalizeAnswer(getSolutionForMovieIndex(round.movieIndex));
-pendingAnswerForStartAt = round.startAt;
-  submittedStartAt = round.startAt;
+
+  // “parche UI”: bloqueo inmediato aunque snapshot tarde
+  pendingAnswerForStartAt = round.startAt;
+  input.disabled = true;
+  $("btnAnswer").disabled = true;
+  $("answerStatus").textContent = "Respuesta enviada ✅ (sincronizando...)";
 
   await updateRoom(roomId, {
     [`round.answers.${playerId}`]: {
-  raw,
-  correct,
-  ts: Date.now(),
-  roundStartAt: round.startAt
-}
+      raw,
+      correct,
+      ts: Date.now(),
+      roundStartAt: round.startAt
+    }
   });
 
-  input.disabled = true;
-  $("btnAnswer").disabled = true;
-  $("answerStatus").textContent = "Respuesta enviada ✅ (esperando al resto)";
+  // si todo va bien, el snapshot terminará confirmando y syncAnswerUI limpiará pending
 }
 
-
-
-// --- Scoring: lo hace SOLO el host cuando todos respondieron ---
+// ------------------------------------------------------
+// Scoring (host only)
+// ------------------------------------------------------
 function allPlayersAnswered(room) {
   const players = Object.keys(room.players || {});
   const answers = room.round?.answers || {};
@@ -213,15 +235,9 @@ function allPlayersAnswered(room) {
   });
 }
 
-
 function computePointsFor(mode, correct) {
-  // MVP: sin pistas, sin rendición, sin intentos todavía.
-  // Locura: +10 / -20
-  // Extremo: +7 / -3
-  // Normal y Contrarreloj: +5 / 0
   if (mode === "locura") return correct ? 10 : -20;
   if (mode === "extremo") return correct ? 7 : -3;
-  // normal / contrarreloj
   return correct ? 5 : 0;
 }
 
@@ -231,15 +247,13 @@ async function hostScoreAndAdvance(room) {
 
   const round = room.round || {};
   if (!round.answers) return;
-
-
-
   if (!allPlayersAnswered(room)) return;
+
+  // Evitar doble scoring
+  if (room.lastScoredIndex === (room.indiceActual ?? 0)) return;
 
   const mode = room.config?.modoJuego || "normal";
   const answers = round.answers;
-
-  // Preparar updates
   const updates = {};
   const playersObj = room.players || {};
 
@@ -255,7 +269,6 @@ async function hostScoreAndAdvance(room) {
     const newRacha = correct ? prevRacha + 1 : 0;
     const best = Math.max(prevBest, newRacha);
 
-    // Bonus por racha cada 10 (igual que tu juego)
     let bonus = 0;
     if (correct && newRacha > 0 && newRacha % 10 === 0) {
       bonus = newRacha; // +10, +20, ...
@@ -266,31 +279,22 @@ async function hostScoreAndAdvance(room) {
     updates[`players.${pid}.mejorRacha`] = best;
   }
 
-// Avanzar a siguiente (o finalizar)
-  // ✅ Guardrail: si ya puntuamos este índice, no repetir
-  // Evitar doble scoring
-  if (room.lastScoredIndex === (room.indiceActual ?? 0)) return;
-
   const currentIndex = room.indiceActual ?? 0;
   const nextIndex = currentIndex + 1;
   const total = room.config?.numPeliculas ?? (room.playlist?.length ?? 0);
   const now = Date.now();
 
-  // Marcar que este índice ya fue puntuado
   updates.lastScoredIndex = currentIndex;
   updates.lastScoredAt = now;
 
   if (nextIndex >= total) {
-    // Finaliza partida
     updates.estado = "finalizada";
     updates.round = { finishedAt: now };
   } else {
-    // ✅ Crea YA la siguiente ronda
     const playlist = room.playlist || [];
     const nextMovieIndex = playlist[nextIndex];
 
     updates.indiceActual = nextIndex;
-
     updates.round = {
       movieIndex: nextMovieIndex,
       startAt: now + 3000,
@@ -301,27 +305,15 @@ async function hostScoreAndAdvance(room) {
   await updateRoom(roomId, updates);
 }
 
-// Inicializar ronda si falta (solo host)
-async function ensureRoundInitialized(room) {
-  const isHost = room.hostId === playerId;
-  if (!isHost) return;
-
-  const round = room.round || {};
-  if (round.startAt && round.movieIndex != null) return;
-
-  const playlist = room.playlist || [];
-  const idx = room.indiceActual ?? 0;
-  const movieIndex = playlist[idx];
-
-  const startAt = Date.now() + 3000;
-
-  await updateRoom(roomId, {
-    round: {
-      movieIndex,
-      startAt,
-      answers: {} // empezamos limpio
-    }
-  });
+// ------------------------------------------------------
+// UI helpers
+// ------------------------------------------------------
+function resetAnswerUIForNewRound() {
+  pendingAnswerForStartAt = null;
+  const input = $("answerInput");
+  input.value = "";
+  $("answerStatus").textContent = "Nueva ronda: escribe tu respuesta 👇";
+  setTimeout(() => input.focus(), 0);
 }
 
 function syncAnswerUI(room) {
@@ -335,14 +327,20 @@ function syncAnswerUI(room) {
     return;
   }
 
-  const already = (submittedStartAt === round.startAt);
+  const myAns = round.answers?.[playerId];
+  const already = !!myAns && myAns.roundStartAt === round.startAt;
 
-  // Si envié hace nada y aún estoy “pendiente”, sigo bloqueado igualmente
+  // Si acabo de enviar pero snapshot aún no lo refleja
   if (!already && pendingAnswerForStartAt != null && pendingAnswerForStartAt === round.startAt) {
     $("answerInput").disabled = true;
     $("btnAnswer").disabled = true;
     $("answerStatus").textContent = "Respuesta enviada ✅ (sincronizando...)";
     return;
+  }
+
+  // Si ya se confirmó, limpia pending
+  if (already && pendingAnswerForStartAt === round.startAt) {
+    pendingAnswerForStartAt = null;
   }
 
   $("answerInput").disabled = already;
@@ -353,75 +351,38 @@ function syncAnswerUI(room) {
     : "Aún no has respondido.";
 }
 
-
-
-
-
-
-function resetAnswerUIForNewRound() {
-submittedStartAt = null;
-pendingAnswerForStartAt = null;
-
-  const input = $("answerInput");
-  const btn = $("btnAnswer");
-
-  pendingAnswerForStartAt = null;
-
-  input.value = "";
-
-  // No decidir aquí disabled/enabled.
-  // Lo decide syncAnswerUI(room) cuando ya sabemos si hay ronda y si has respondido.
-  $("answerStatus").textContent = "Nueva ronda: escribe tu respuesta 👇";
-  setTimeout(() => input.focus(), 0);
-}
-
-
-
-
-
-
+// ------------------------------------------------------
+// renderRoom (CORRECTO)
+// ------------------------------------------------------
 function renderRoom(room) {
   if (!room) {
     setError("La sala no existe o ha sido eliminada.");
     return;
   }
 
-  // ----------------------------
-  // 1) Estados globales
-  // ----------------------------
   if (room.estado === "finalizada") {
     window.location.href = `results.html?room=${encodeURIComponent(roomId)}`;
     return;
   }
 
+  // IMPORTANTE: aquí NO redirigimos al host.
   if (room.estado === "esperando") {
-    const isHost = room.hostId === playerId;
-
-    if (isHost) {
-      // El host no debería estar en game si aún no ha empezado
-      window.location.href = `lobby.html?room=${encodeURIComponent(roomId)}`;
-      return;
-    }
-
     $("countdownText").textContent = "-";
     setStatus("Esperando a que el host inicie la partida...");
     $("answerInput").disabled = true;
     $("btnAnswer").disabled = true;
     $("answerStatus").textContent = "Esperando a que empiece la ronda...";
+    setError("");
     return;
   }
 
   if (room.estado !== "jugando") {
-    // estados raros -> al lobby
     window.location.href = `lobby.html?room=${encodeURIComponent(roomId)}`;
     return;
   }
 
   setError("");
 
-  // ----------------------------
-  // 2) Info general / cabecera
-  // ----------------------------
   const cfg = room.config || {};
   $("modoText").textContent = cfg.modoJuego || "-";
   $("modoRondaText").textContent = cfg.modoRonda || "-";
@@ -433,19 +394,17 @@ function renderRoom(room) {
   renderPlayers(room.players);
   renderScores(room.players);
 
-  // ----------------------------
-  // 3) Ronda nueva (solo si cambia indiceActual)
-  // ----------------------------
+  // Host asegura que existe ronda
+  ensureRoundInitialized(room).catch(err => console.error("init round:", err));
+
+  // Detectar ronda nueva por índice
   if (idx !== lastRoundIndex) {
     lastRoundIndex = idx;
-    lastScheduledStartAt = null; // fuerza re-schedule del audio en ronda nueva
+    lastScheduledStartAt = null;
     clearTimers();
     resetAnswerUIForNewRound();
   }
 
-  // ----------------------------
-  // 4) Audio y estado de sincronización
-  // ----------------------------
   const round = room.round || {};
   const hasRound = !!round.startAt && round.movieIndex != null;
 
@@ -455,28 +414,19 @@ function renderRoom(room) {
   } else {
     $("countdownText").textContent = "-";
     setStatus("Esperando sincronización...");
-
-    $("answerInput").disabled = true;
-    $("btnAnswer").disabled = true;
-    $("answerStatus").textContent = "Esperando a que empiece la ronda...";
   }
 
-  // ----------------------------
-  // 5) UI respuesta (UNA SOLA VEZ)
-  // ----------------------------
+  // UI respuesta (UNA sola vez)
   syncAnswerUI(room);
 
-  // ----------------------------
-  // 6) Scoring + avanzar (solo host)
-  // ----------------------------
+  // Scoring host
   hostScoreAndAdvance(room).catch(err => console.error("score:", err));
 }
 
-
-
-// Botón enviar respuesta
+// ------------------------------------------------------
+// Events
+// ------------------------------------------------------
 $("btnAnswer").addEventListener("click", async () => {
-  // Necesitamos el room actual; lo mantenemos en una variable
   if (!window.__currentRoom) return;
   try {
     await submitAnswer(window.__currentRoom);
@@ -485,7 +435,6 @@ $("btnAnswer").addEventListener("click", async () => {
   }
 });
 
-// Enter en input
 $("answerInput").addEventListener("keydown", async (e) => {
   if (e.key === "Enter") {
     if (!window.__currentRoom) return;
