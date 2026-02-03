@@ -467,8 +467,8 @@ function syncAnswerUI(room) {
   $("answerInput").disabled = already;
   $("btnAnswer").disabled = already;
 
-  $("answerStatus").textContent = already
-    ? "Respuesta enviada ✅ (esperando al resto)"
+  $("answerStatus").textContent = already ?
+     "Respuesta enviada ✅ (esperando al resto)"
     : "Aún no has respondido.";
 }
 
