@@ -113,6 +113,62 @@ let scheduledPlayTimeout = null;
 let lastScheduledStartAt = null;
 let lastRoundIndex = -1;
 
+// ============================
+// DEBUG / LOGGING
+// ============================
+const DEBUG = true;
+const LOG_PREFIX = "[QSDC-MULTI]";
+let __snapN = 0;
+
+function dlog(...args) {
+  if (!DEBUG) return;
+  console.log(LOG_PREFIX, ...args);
+}
+
+function dgroup(title, obj) {
+  if (!DEBUG) return;
+  console.groupCollapsed(`${LOG_PREFIX} ${title}`);
+  if (obj !== undefined) console.log(obj);
+  console.groupEnd();
+}
+
+const __logOnce = new Set();
+function dlogOnce(key, ...args) {
+  if (!DEBUG) return;
+  if (__logOnce.has(key)) return;
+  __logOnce.add(key);
+  console.log(LOG_PREFIX, ...args);
+}
+
+function snapMini(room) {
+  const idx = room?.indiceActual ?? null;
+  const r = room?.round || {};
+  const startAt = r.startAt ?? null;
+  const movieIndex = r.movieIndex ?? null;
+
+  const answers = r.answers || {};
+  const answersKeys = Object.keys(answers);
+
+  const myAns = answers?.[playerId] || null;
+
+  return {
+    estado: room?.estado,
+    hostId: room?.hostId,
+    playerId,
+    idx,
+    startAt,
+    movieIndex,
+    playersCount: Object.keys(room?.players || {}).length,
+    answersCount: answersKeys.length,
+    answersKeys,
+    hasMyAnswerObj: !!myAns,
+    myAnswerRoundStartAt: myAns?.roundStartAt ?? null,
+    pendingAnswerForStartAt,
+    lastRoundIndex,
+    lastScheduledStartAt,
+  };
+}
+
 // ------------------------------------------------------
 // Timers / audio sync
 // ------------------------------------------------------
@@ -127,6 +183,8 @@ function clearTimers() {
 function scheduleSynchronizedPlay(startAtMs, audioUrl) {
   if (lastScheduledStartAt === startAtMs) return;
   lastScheduledStartAt = startAtMs;
+
+  dlog("scheduleSynchronizedPlay()", { startAtMs, audioUrl });
 
   clearTimers();
 
@@ -175,9 +233,14 @@ async function ensureRoundInitialized(room) {
   const movieIndex = playlist[idx];
 
   // Si no hay playlist o índice inválido, no init
-  if (movieIndex == null) return;
+  if (movieIndex == null) {
+    dlog("ensureRoundInitialized(): movieIndex null -> skip", { idx, playlistLen: playlist.length });
+    return;
+  }
 
   const startAt = Date.now() + 3000;
+
+  dlog("ensureRoundInitialized(): creating round", { idx, movieIndex, startAt });
 
   await updateRoom(roomId, {
     round: { movieIndex, startAt, answers: {} }
@@ -188,16 +251,27 @@ async function ensureRoundInitialized(room) {
 // Submit answer
 // ------------------------------------------------------
 async function submitAnswer(room) {
+  dgroup("submitAnswer() ENTER", snapMini(room));
+
   const round = room.round || {};
-  if (!round.startAt || round.movieIndex == null) return;
+  if (!round.startAt || round.movieIndex == null) {
+    dlog("submitAnswer() abort: no valid round", { startAt: round.startAt, movieIndex: round.movieIndex });
+    return;
+  }
 
   // si ya existe mi respuesta en Firestore, no reenviar
   const myAns = round.answers?.[playerId];
-  if (myAns && myAns.roundStartAt === round.startAt) return;
+  if (myAns && myAns.roundStartAt === round.startAt) {
+    dlog("submitAnswer() SKIP: already answered this round", { myAns, roundStartAt: round.startAt });
+    return;
+  }
 
   const input = $("answerInput");
   const raw = input.value.trim();
-  if (!raw) return;
+  if (!raw) {
+    dlog("submitAnswer() abort: empty raw");
+    return;
+  }
 
   const correct = normalizeAnswer(raw) === normalizeAnswer(getSolutionForMovieIndex(round.movieIndex));
 
@@ -206,6 +280,13 @@ async function submitAnswer(room) {
   input.disabled = true;
   $("btnAnswer").disabled = true;
   $("answerStatus").textContent = "Respuesta enviada ✅ (sincronizando...)";
+
+  dlog("submitAnswer() -> writing Firestore", {
+    writingKey: `round.answers.${playerId}`,
+    roundStartAt: round.startAt,
+    raw,
+    correct
+  });
 
   await updateRoom(roomId, {
     [`round.answers.${playerId}`]: {
@@ -216,7 +297,7 @@ async function submitAnswer(room) {
     }
   });
 
-  // si todo va bien, el snapshot terminará confirmando y syncAnswerUI limpiará pending
+  dlog("submitAnswer() -> write OK (waiting snapshot)");
 }
 
 // ------------------------------------------------------
@@ -242,15 +323,20 @@ function computePointsFor(mode, correct) {
 }
 
 async function hostScoreAndAdvance(room) {
+  dgroup("hostScoreAndAdvance() ENTER", snapMini(room));
+
   const isHost = room.hostId === playerId;
-  if (!isHost) return;
+  if (!isHost) { dlog("hostScoreAndAdvance() skip: not host"); return; }
 
   const round = room.round || {};
-  if (!round.answers) return;
-  if (!allPlayersAnswered(room)) return;
+  if (!round.answers) { dlog("hostScoreAndAdvance() skip: no answers obj"); return; }
+  if (!allPlayersAnswered(room)) { dlog("hostScoreAndAdvance() skip: not all answered"); return; }
 
   // Evitar doble scoring
-  if (room.lastScoredIndex === (room.indiceActual ?? 0)) return;
+  if (room.lastScoredIndex === (room.indiceActual ?? 0)) {
+    dlog("hostScoreAndAdvance() skip: already scored idx", room.lastScoredIndex);
+    return;
+  }
 
   const mode = room.config?.modoJuego || "normal";
   const answers = round.answers;
@@ -271,7 +357,7 @@ async function hostScoreAndAdvance(room) {
 
     let bonus = 0;
     if (correct && newRacha > 0 && newRacha % 10 === 0) {
-      bonus = newRacha; // +10, +20, ...
+      bonus = newRacha;
     }
 
     updates[`players.${pid}.puntos`] = prevPts + delta + bonus;
@@ -302,6 +388,13 @@ async function hostScoreAndAdvance(room) {
     };
   }
 
+  dlog("hostScoreAndAdvance() -> updating room", {
+    updatesKeys: Object.keys(updates),
+    nextEstado: updates.estado || "jugando",
+    nextIndice: updates.indiceActual ?? "(same)",
+    nextRound: updates.round ? { startAt: updates.round.startAt, movieIndex: updates.round.movieIndex } : null
+  });
+
   await updateRoom(roomId, updates);
 }
 
@@ -309,6 +402,8 @@ async function hostScoreAndAdvance(room) {
 // UI helpers
 // ------------------------------------------------------
 function resetAnswerUIForNewRound() {
+  dlog("resetAnswerUIForNewRound()");
+
   pendingAnswerForStartAt = null;
   const input = $("answerInput");
   input.value = "";
@@ -317,10 +412,13 @@ function resetAnswerUIForNewRound() {
 }
 
 function syncAnswerUI(room) {
+  dgroup("syncAnswerUI() ENTER", snapMini(room));
+
   const round = room.round || {};
   const hasRound = !!round.startAt && round.movieIndex != null;
 
   if (!hasRound) {
+    dlog("syncAnswerUI() -> no round yet -> DISABLE input");
     $("answerInput").disabled = true;
     $("btnAnswer").disabled = true;
     $("answerStatus").textContent = "Esperando a que empiece la ronda...";
@@ -332,6 +430,7 @@ function syncAnswerUI(room) {
 
   // Si acabo de enviar pero snapshot aún no lo refleja
   if (!already && pendingAnswerForStartAt != null && pendingAnswerForStartAt === round.startAt) {
+    dlog("syncAnswerUI() -> pending local send -> DISABLE input");
     $("answerInput").disabled = true;
     $("btnAnswer").disabled = true;
     $("answerStatus").textContent = "Respuesta enviada ✅ (sincronizando...)";
@@ -340,21 +439,25 @@ function syncAnswerUI(room) {
 
   // Si ya se confirmó, limpia pending
   if (already && pendingAnswerForStartAt === round.startAt) {
+    dlog("syncAnswerUI() -> snapshot confirmed -> clear pending");
     pendingAnswerForStartAt = null;
   }
 
+  dlog("syncAnswerUI() -> set disabled =", already);
   $("answerInput").disabled = already;
   $("btnAnswer").disabled = already;
 
-  $("answerStatus").textContent = already ?
-     "Respuesta enviada ✅ (esperando al resto)"
+  $("answerStatus").textContent = already
+    ? "Respuesta enviada ✅ (esperando al resto)"
     : "Aún no has respondido.";
 }
 
 // ------------------------------------------------------
-// renderRoom (CORRECTO)
+// renderRoom
 // ------------------------------------------------------
 function renderRoom(room) {
+  dgroup("renderRoom() ENTER", snapMini(room));
+
   if (!room) {
     setError("La sala no existe o ha sido eliminada.");
     return;
@@ -399,6 +502,7 @@ function renderRoom(room) {
 
   // Detectar ronda nueva por índice
   if (idx !== lastRoundIndex) {
+    dlog("NEW ROUND detected by idx change", { prev: lastRoundIndex, next: idx });
     lastRoundIndex = idx;
     lastScheduledStartAt = null;
     clearTimers();
@@ -448,8 +552,14 @@ $("answerInput").addEventListener("keydown", async (e) => {
 
 // Listen
 if (roomId) {
+  dlogOnce("startup", "Starting listenRoom()", { roomId, playerId });
+
   unsub = listenRoom(roomId, (room) => {
     window.__currentRoom = room;
+
+    __snapN++;
+    dgroup(`SNAP #${__snapN}`, snapMini(room));
+
     renderRoom(room);
   });
 }
