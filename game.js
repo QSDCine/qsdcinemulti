@@ -2,6 +2,7 @@ import { listenRoom, updateRoom } from "./firestore-utils.js";
 import { REGLAS } from "./reglas.js";
 
 let pendingAnswerForStartAt = null;
+let submittedStartAt = null;
 
 function $(id) { return document.getElementById(id); }
 
@@ -180,6 +181,7 @@ if (myAns && myAns.roundStartAt === round.startAt) return;
 
   const correct = normalizeAnswer(raw) === normalizeAnswer(getSolutionForMovieIndex(round.movieIndex));
 pendingAnswerForStartAt = round.startAt;
+  submittedStartAt = round.startAt;
 
   await updateRoom(roomId, {
     [`round.answers.${playerId}`]: {
@@ -333,28 +335,33 @@ function syncAnswerUI(room) {
     return;
   }
 
-  const myAns = round.answers?.[playerId];
-  const already = !!myAns && myAns.roundStartAt === round.startAt;
+  const already = (submittedStartAt === round.startAt);
 
-  // ✅ Nunca bloquees el input por estados raros.
-  // Si ya respondió, solo deshabilita el botón (opcional) pero deja escribir.
-  $("answerInput").disabled = false;
+  // Si envié hace nada y aún estoy “pendiente”, sigo bloqueado igualmente
+  if (!already && pendingAnswerForStartAt != null && pendingAnswerForStartAt === round.startAt) {
+    $("answerInput").disabled = true;
+    $("btnAnswer").disabled = true;
+    $("answerStatus").textContent = "Respuesta enviada ✅ (sincronizando...)";
+    return;
+  }
+
+  $("answerInput").disabled = already;
   $("btnAnswer").disabled = already;
 
-  if (already) {
-    $("answerStatus").textContent = "Respuesta enviada ✅ (esperando al resto)";
-  } else if (pendingAnswerForStartAt === round.startAt) {
-    $("answerStatus").textContent = "Respuesta enviada ✅ (sincronizando...)";
-  } else {
-    $("answerStatus").textContent = "Aún no has respondido.";
-  }
+  $("answerStatus").textContent = already ?
+     "Respuesta enviada ✅ (esperando al resto)"
+    : "Aún no has respondido.";
 }
 
 
 
 
 
+
 function resetAnswerUIForNewRound() {
+submittedStartAt = null;
+pendingAnswerForStartAt = null;
+
   const input = $("answerInput");
   const btn = $("btnAnswer");
 
