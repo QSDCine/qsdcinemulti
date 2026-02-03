@@ -14,55 +14,54 @@ const CORE_ASSETS = [
   'icon-512.png',
 ];
 // Instalar: cachea lo esencial
-self.addEventListener("install", (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(CORE_ASSETS))
-  );
+self.addEventListener("install", (e) => {
+  e.waitUntil(caches.open(CACHE_NAME).then((c) => c.addAll(CORE_ASSETS)));
   self.skipWaiting();
 });
 
-// Activar: limpiar caches antiguas
-self.addEventListener("activate", (event) => {
-  event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
-    )
+self.addEventListener("activate", (e) => {
+  e.waitUntil(
+    (async () => {
+      const keys = await caches.keys();
+      await Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)));
+      await self.clients.claim();
+    })()
   );
-  self.clients.claim();
 });
 
-// Fetch: cache-first SOLO para same-origin GET
+// ✅ Cachea SOLO same-origin GET. Nada de Firebase/Google APIs.
 self.addEventListener("fetch", (event) => {
   const req = event.request;
 
-  // Solo GET
   if (req.method !== "GET") return;
 
   const url = new URL(req.url);
 
-  // Nunca interceptar Firebase/Firestore/CDNs
-  const blockedHosts = [
-    "firestore.googleapis.com",
-    "www.gstatic.com",
-    "firebase.googleapis.com",
-    "identitytoolkit.googleapis.com",
-    "securetoken.googleapis.com"
-  ];
-  if (blockedHosts.includes(url.hostname)) {
-    // network-only
+  // 🚫 No tocar llamadas a otros dominios (Firestore, gstatic, etc.)
+  if (url.origin !== self.location.origin) return;
+
+  // Cache-first para assets; network-first para HTML
+  const isHTML = req.headers.get("accept")?.includes("text/html");
+
+  if (isHTML) {
+    event.respondWith(
+      fetch(req)
+        .then((res) => {
+          const copy = res.clone();
+          caches.open(CACHE_NAME).then((c) => c.put(req, copy));
+          return res;
+        })
+        .catch(() => caches.match(req))
+    );
     return;
   }
 
-  // Solo cache si es tu mismo origen
-  if (url.origin !== self.location.origin) return;
-
   event.respondWith(
-    caches.match(req, { ignoreSearch: true }).then((cached) => {
+    caches.match(req).then((cached) => {
       if (cached) return cached;
       return fetch(req).then((res) => {
-        // guarda copia en cache
         const copy = res.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(req, copy));
+        caches.open(CACHE_NAME).then((c) => c.put(req, copy));
         return res;
       });
     })
