@@ -367,12 +367,13 @@ function resetAnswerUIForNewRound() {
   pendingAnswerForStartAt = null;
 
   input.value = "";
-  input.disabled = false;
-  btn.disabled = false;
 
+  // No decidir aquí disabled/enabled.
+  // Lo decide syncAnswerUI(room) cuando ya sabemos si hay ronda y si has respondido.
   $("answerStatus").textContent = "Nueva ronda: escribe tu respuesta 👇";
   setTimeout(() => input.focus(), 0);
 }
+
 
 
 
@@ -443,8 +444,6 @@ if ((room.indiceActual ?? 0) !== lastRoundIndex) {
 
 
 
-syncAnswerUI(room);
-
 if (round.startAt && round.movieIndex != null) {
   const url = getAudioUrlFromMovieIndex(round.movieIndex);
   scheduleSynchronizedPlay(round.startAt, url);
@@ -452,13 +451,10 @@ if (round.startAt && round.movieIndex != null) {
   $("countdownText").textContent = "-";
   setStatus("Esperando sincronización...");
 
-  // ✅ Evita estados fantasma del input si aún no hay ronda lista
   $("answerInput").disabled = true;
   $("btnAnswer").disabled = true;
   $("answerStatus").textContent = "Esperando a que empiece la ronda...";
 }
-
-
   // UI respuesta
   syncAnswerUI(room);
 
