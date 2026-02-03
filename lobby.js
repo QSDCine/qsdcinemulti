@@ -114,16 +114,17 @@ if (room.estado === "jugando") {
 
 $("btnStart").addEventListener("click", async () => {
   try {
-    if (!currentRoom) return setError("No hay datos de sala todavía, espera un segundo y prueba otra vez.");
+    if (!currentRoom) return setError("Espera a que cargue la sala…");
 
     const playlist = currentRoom.playlist || [];
     const firstMovieIndex = playlist[0];
-
-    if (firstMovieIndex == null) {
-      return setError("La sala no tiene playlist. Crea la sala de nuevo.");
-    }
+    if (firstMovieIndex == null) return setError("La sala no tiene playlist.");
 
     const now = Date.now();
+
+    // Evita doble click
+    const btn = $("btnStart");
+    btn.disabled = true;
 
     await updateRoom(roomId, {
       estado: "jugando",
@@ -137,11 +138,16 @@ $("btnStart").addEventListener("click", async () => {
       }
     });
 
+    // ✅ REDIRECCIÓN DIRECTA DEL HOST
+    window.location.href = `game.html?room=${encodeURIComponent(roomId)}`;
+
   } catch (e) {
     console.error(e);
     setError(e?.message || "No se pudo iniciar la partida.");
+    $("btnStart").disabled = false;
   }
 });
+
 
 
 // Arrancar listener

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'qsdcinemulti-v2'; // 👈 cambia el nombre para forzar actualización
+const CACHE_NAME = 'qsdcinemulti-v3';
 const CORE_ASSETS = [
   './',
   'index.html',
@@ -13,65 +13,57 @@ const CORE_ASSETS = [
   'icon-192.png',
   'icon-512.png',
 ];
-
 // Instalar: cachea lo esencial
-self.addEventListener('install', (e) => {
-  console.log('[SW] Instalando...');
-  e.waitUntil(
+self.addEventListener("install", (event) => {
+  event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => cache.addAll(CORE_ASSETS))
   );
   self.skipWaiting();
 });
 
-// Activar: limpiar caches antiguas si hay
-self.addEventListener('activate', (e) => {
-  e.waitUntil(
+// Activar: limpiar caches antiguas
+self.addEventListener("activate", (event) => {
+  event.waitUntil(
     caches.keys().then((keys) =>
       Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
     )
   );
   self.clients.claim();
-  console.log('[SW] Activado y listo');
 });
 
-// Fetch: cache-first SOLO para tu web (same-origin) y SOLO GET.
-// Deja Firebase/Firestore completamente en paz.
+// Fetch: cache-first SOLO para same-origin GET
 self.addEventListener("fetch", (event) => {
   const req = event.request;
 
-  // 1) No tocar nada que no sea GET
+  // Solo GET
   if (req.method !== "GET") return;
 
   const url = new URL(req.url);
 
-  // 2) No tocar peticiones fuera de tu dominio (CDNs, Firebase, etc.)
+  // Nunca interceptar Firebase/Firestore/CDNs
+  const blockedHosts = [
+    "firestore.googleapis.com",
+    "www.gstatic.com",
+    "firebase.googleapis.com",
+    "identitytoolkit.googleapis.com",
+    "securetoken.googleapis.com"
+  ];
+  if (blockedHosts.includes(url.hostname)) {
+    // network-only
+    return;
+  }
+
+  // Solo cache si es tu mismo origen
   if (url.origin !== self.location.origin) return;
-
-  // 3) “Corta” cualquier ruta que pueda engancharse a cosas raras (por si acaso)
-  const host = url.hostname;
-  const isFirebase =
-    host.includes("firestore.googleapis.com") ||
-    host.includes("firebase.googleapis.com") ||
-    host.includes("googleapis.com") ||
-    host.includes("gstatic.com");
-
-  if (isFirebase) return;
 
   event.respondWith(
     caches.match(req, { ignoreSearch: true }).then((cached) => {
       if (cached) return cached;
       return fetch(req).then((res) => {
-
-        if (res && res.status === 200 && res.type === "basic") {
-          const clone = res.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(req, clone));
-        }
+        // guarda copia en cache
+        const copy = res.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(req, copy));
         return res;
-      });
-    }).catch(() => {
-      return new Response("Archivo no disponible offline", {
-        status: 503,
-        statusText: "Offline y sin caché",
       });
     })
   );

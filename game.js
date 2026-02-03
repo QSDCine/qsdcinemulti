@@ -391,14 +391,22 @@ if (room.estado === "finalizada") {
 }
 
 if (room.estado === "esperando") {
+  const isHost = room.hostId === playerId;
+
+  if (isHost) {
+    // el host no debería estar en game si aún no ha empezado
+    window.location.href = `lobby.html?room=${encodeURIComponent(roomId)}`;
+    return;
+  }
+
   $("countdownText").textContent = "-";
   setStatus("Esperando a que el host inicie la partida...");
-  // input bloqueado mientras no hay ronda
   $("answerInput").disabled = true;
   $("btnAnswer").disabled = true;
   $("answerStatus").textContent = "Esperando a que empiece la ronda...";
   return;
 }
+
 
 if (room.estado !== "jugando") {
   // estados raros -> al lobby
