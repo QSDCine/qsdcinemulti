@@ -9,25 +9,42 @@ function getParam(name) {
   return new URLSearchParams(window.location.search).get(name);
 }
 
-function getOrCreatePlayerId() {
-  // Persistente por dispositivo
+function getOrCreateDeviceId() {
   const deviceKey = "qsdcmulti_deviceId";
   let deviceId = localStorage.getItem(deviceKey);
   if (!deviceId) {
     deviceId = crypto.randomUUID();
     localStorage.setItem(deviceKey, deviceId);
   }
+  return deviceId;
+}
 
-  // Único por pestaña/sesión (no se comparte entre tabs)
+function getOrCreateTabId() {
   const tabKey = "qsdcmulti_tabId";
-  let tabId = sessionStorage.getItem(tabKey);
-  if (!tabId) {
-    tabId = crypto.randomUUID();
-    sessionStorage.setItem(tabKey, tabId);
+
+  // 1) Si viene en URL, úsalo y persístelo
+  const urlTab = getParam("tab");
+  if (urlTab) {
+    sessionStorage.setItem(tabKey, urlTab);
+    return urlTab;
   }
 
+  // 2) Si existe en sessionStorage, úsalo
+  let tabId = sessionStorage.getItem(tabKey);
+  if (tabId) return tabId;
+
+  // 3) Si no, créalo
+  tabId = crypto.randomUUID();
+  sessionStorage.setItem(tabKey, tabId);
+  return tabId;
+}
+
+function getOrCreatePlayerId() {
+  const deviceId = getOrCreateDeviceId();
+  const tabId = getOrCreateTabId();
   return `${deviceId}:${tabId}`;
 }
+
 
 function setError(msg) {
   const el = $("gameError");
@@ -96,14 +113,17 @@ function renderScores(playersObj) {
 }
 
 const roomId = (getParam("room") || "").toUpperCase().trim();
+const tabId = getOrCreateTabId();
 const playerId = getOrCreatePlayerId();
+
 
 if (!roomId) setError("Falta el parámetro de sala. Vuelve al lobby.");
 
 $("roomIdText").textContent = roomId;
 
 $("btnBack").addEventListener("click", () => {
-  window.location.href = `lobby.html?room=${encodeURIComponent(roomId)}`;
+window.location.href = `lobby.html?room=${encodeURIComponent(roomId)}&tab=${encodeURIComponent(tabId)}`;
+
 });
 
 let unsub = null;

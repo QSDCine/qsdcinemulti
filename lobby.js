@@ -6,26 +6,42 @@ function getParam(name) {
   return new URLSearchParams(window.location.search).get(name);
 }
 
-function getOrCreatePlayerId() {
-  // Persistente por dispositivo
+function getOrCreateDeviceId() {
   const deviceKey = "qsdcmulti_deviceId";
   let deviceId = localStorage.getItem(deviceKey);
   if (!deviceId) {
     deviceId = crypto.randomUUID();
     localStorage.setItem(deviceKey, deviceId);
   }
+  return deviceId;
+}
 
-  // Único por pestaña/sesión (no se comparte entre tabs)
+function getOrCreateTabId() {
   const tabKey = "qsdcmulti_tabId";
-  let tabId = sessionStorage.getItem(tabKey);
-  if (!tabId) {
-    tabId = crypto.randomUUID();
-    sessionStorage.setItem(tabKey, tabId);
+
+  // 1) Si viene en URL, úsalo y persístelo
+  const urlTab = getParam("tab");
+  if (urlTab) {
+    sessionStorage.setItem(tabKey, urlTab);
+    return urlTab;
   }
 
-  // PlayerId final (único incluso en dos pestañas del mismo navegador)
+  // 2) Si existe en sessionStorage, úsalo
+  let tabId = sessionStorage.getItem(tabKey);
+  if (tabId) return tabId;
+
+  // 3) Si no, créalo
+  tabId = crypto.randomUUID();
+  sessionStorage.setItem(tabKey, tabId);
+  return tabId;
+}
+
+function getOrCreatePlayerId() {
+  const deviceId = getOrCreateDeviceId();
+  const tabId = getOrCreateTabId();
   return `${deviceId}:${tabId}`;
 }
+
 
 
 function setError(msg) {
@@ -41,7 +57,10 @@ function setError(msg) {
 }
 
 const roomId = (getParam("room") || "").toUpperCase().trim();
+const tabId = getOrCreateTabId();
 const playerId = getOrCreatePlayerId();
+
+
 
 if (!roomId) {
   setError("Falta el parámetro de sala. Vuelve al inicio e inténtalo de nuevo.");
@@ -107,8 +126,9 @@ currentRoom = room;
 
   // Si el juego ya empezó, redirigimos
 if (room.estado === "jugando") {
-  window.location.href = `game.html?room=${encodeURIComponent(roomId)}`;
+  window.location.href = `game.html?room=${encodeURIComponent(roomId)}&tab=${encodeURIComponent(tabId)}`;
 }
+
 
 }
 
@@ -139,7 +159,8 @@ $("btnStart").addEventListener("click", async () => {
     });
 
     // ✅ REDIRECCIÓN DIRECTA DEL HOST
-    window.location.href = `game.html?room=${encodeURIComponent(roomId)}`;
+window.location.href = `game.html?room=${encodeURIComponent(roomId)}&tab=${encodeURIComponent(tabId)}`;
+
 
   } catch (e) {
     console.error(e);
