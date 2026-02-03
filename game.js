@@ -386,39 +386,42 @@ function renderRoom(room) {
     return;
   }
 
-  // Fin de partida
-if (room.estado === "finalizada") {
-  window.location.href = `results.html?room=${encodeURIComponent(roomId)}`;
-  return;
-}
+  // ----------------------------
+  // 1) Estados globales
+  // ----------------------------
+  if (room.estado === "finalizada") {
+    window.location.href = `results.html?room=${encodeURIComponent(roomId)}`;
+    return;
+  }
 
-if (room.estado === "esperando") {
-  const isHost = room.hostId === playerId;
+  if (room.estado === "esperando") {
+    const isHost = room.hostId === playerId;
 
-  if (isHost) {
-    // el host no debería estar en game si aún no ha empezado
+    if (isHost) {
+      // El host no debería estar en game si aún no ha empezado
+      window.location.href = `lobby.html?room=${encodeURIComponent(roomId)}`;
+      return;
+    }
+
+    $("countdownText").textContent = "-";
+    setStatus("Esperando a que el host inicie la partida...");
+    $("answerInput").disabled = true;
+    $("btnAnswer").disabled = true;
+    $("answerStatus").textContent = "Esperando a que empiece la ronda...";
+    return;
+  }
+
+  if (room.estado !== "jugando") {
+    // estados raros -> al lobby
     window.location.href = `lobby.html?room=${encodeURIComponent(roomId)}`;
     return;
   }
 
-  $("countdownText").textContent = "-";
-  setStatus("Esperando a que el host inicie la partida...");
-  $("answerInput").disabled = true;
-  $("btnAnswer").disabled = true;
-  $("answerStatus").textContent = "Esperando a que empiece la ronda...";
-  return;
-}
-
-
-if (room.estado !== "jugando") {
-  // estados raros -> al lobby
-  window.location.href = `lobby.html?room=${encodeURIComponent(roomId)}`;
-  return;
-}
-
-
   setError("");
 
+  // ----------------------------
+  // 2) Info general / cabecera
+  // ----------------------------
   const cfg = room.config || {};
   $("modoText").textContent = cfg.modoJuego || "-";
   $("modoRondaText").textContent = cfg.modoRonda || "-";
@@ -430,38 +433,46 @@ if (room.estado !== "jugando") {
   renderPlayers(room.players);
   renderScores(room.players);
 
-  // Inicializar ronda (host)
- // ensureRoundInitialized(room).catch(err => console.error("init round:", err));
+  // ----------------------------
+  // 3) Ronda nueva (solo si cambia indiceActual)
+  // ----------------------------
+  if (idx !== lastRoundIndex) {
+    lastRoundIndex = idx;
+    lastScheduledStartAt = null; // fuerza re-schedule del audio en ronda nueva
+    clearTimers();
+    resetAnswerUIForNewRound();
+  }
 
-  // Reproducir sincronizado
+  // ----------------------------
+  // 4) Audio y estado de sincronización
+  // ----------------------------
   const round = room.round || {};
-// ✅ Detectar ronda nueva y resetear UI
-if ((room.indiceActual ?? 0) !== lastRoundIndex) {
-  lastRoundIndex = room.indiceActual ?? 0;
-  lastScheduledStartAt = null;
-  clearTimers();
-  resetAnswerUIForNewRound();
-}
+  const hasRound = !!round.startAt && round.movieIndex != null;
 
+  if (hasRound) {
+    const url = getAudioUrlFromMovieIndex(round.movieIndex);
+    scheduleSynchronizedPlay(round.startAt, url);
+  } else {
+    $("countdownText").textContent = "-";
+    setStatus("Esperando sincronización...");
 
+    $("answerInput").disabled = true;
+    $("btnAnswer").disabled = true;
+    $("answerStatus").textContent = "Esperando a que empiece la ronda...";
+  }
 
-if (round.startAt && round.movieIndex != null) {
-  const url = getAudioUrlFromMovieIndex(round.movieIndex);
-  scheduleSynchronizedPlay(round.startAt, url);
-} else {
-  $("countdownText").textContent = "-";
-  setStatus("Esperando sincronización...");
-
-  $("answerInput").disabled = true;
-  $("btnAnswer").disabled = true;
-  $("answerStatus").textContent = "Esperando a que empiece la ronda...";
-}
-  // UI respuesta
+  // ----------------------------
+  // 5) UI respuesta (UNA SOLA VEZ)
+  // ----------------------------
   syncAnswerUI(room);
 
-  // Scoring + avanzar (host)
+  // ----------------------------
+  // 6) Scoring + avanzar (solo host)
+  // ----------------------------
   hostScoreAndAdvance(room).catch(err => console.error("score:", err));
 }
+
+
 
 // Botón enviar respuesta
 $("btnAnswer").addEventListener("click", async () => {
