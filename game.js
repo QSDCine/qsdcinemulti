@@ -336,26 +336,20 @@ function syncAnswerUI(room) {
   const myAns = round.answers?.[playerId];
   const already = !!myAns && myAns.roundStartAt === round.startAt;
 
-  // ✅ si acabo de enviar pero snapshot aún no lo refleja
-  if (!already && pendingAnswerForStartAt != null && pendingAnswerForStartAt === round.startAt) {
-    $("answerInput").disabled = true;
-    $("btnAnswer").disabled = true;
-    $("answerStatus").textContent = "Respuesta enviada ✅ (sincronizando...)";
-    return;
-  }
-
-  // ✅ si ya se confirmó en snapshot, limpias pending
-  if (already && pendingAnswerForStartAt === round.startAt) {
-    pendingAnswerForStartAt = null;
-  }
-
-  $("answerInput").disabled = already;
+  // ✅ Nunca bloquees el input por estados raros.
+  // Si ya respondió, solo deshabilita el botón (opcional) pero deja escribir.
+  $("answerInput").disabled = false;
   $("btnAnswer").disabled = already;
 
-  $("answerStatus").textContent = already ?
-     "Respuesta enviada ✅ (esperando al resto)"
-    : "Aún no has respondido.";
+  if (already) {
+    $("answerStatus").textContent = "Respuesta enviada ✅ (esperando al resto)";
+  } else if (pendingAnswerForStartAt === round.startAt) {
+    $("answerStatus").textContent = "Respuesta enviada ✅ (sincronizando...)";
+  } else {
+    $("answerStatus").textContent = "Aún no has respondido.";
+  }
 }
+
 
 
 
