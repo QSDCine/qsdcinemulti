@@ -1,206 +1,234 @@
-/* Juego creado sin ánimo de lucro por Wildcrow */
+/* ============================
+   QSDC MULTI - GAME STYLE
+   Inspirado en el CSS original
+============================ */
+
 /* RESET GENERAL */
-* {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
+*,
+*::before,
+*::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
 }
 
 html {
-    font-size: clamp(16px, 2vw, 24px); /* Escalable según pantalla */
+  font-size: clamp(16px, 2vw, 24px);
 }
 
 body {
-    font-family: Arial, sans-serif;
-    background-color: #f0f0f0;
-    min-height: 100vh;
-    display: flex;
-    justify-content: center;
-    align-items: flex-start;
-    overflow-y: auto;
-    
+  font-family: Arial, sans-serif;
+  background-color: #f0f0f0;
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  overflow-y: auto;
 }
 
 /* CONTENEDOR PRINCIPAL */
-#app { max-width: 520px; margin: 0 auto; padding: 16px; text-align: center; }
-.row { display: flex; gap: 10px; justify-content: center; margin-top: 12px; flex-wrap: wrap; }
-.home-actions { display: flex; flex-direction: column; gap: 10px; margin: 16px 0; }
-input, select { width: 100%; max-width: 360px; padding: 10px; margin: 8px auto; display: block; }
-.error { color: #c00; }
-.primary { font-weight: 600; }
-
-
-/* TITULOS */
-#intro h1 {
-    font-size: clamp(1.5rem, 5vw, 3rem);
-    margin-bottom: 1rem;
+#app {
+  max-width: 520px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 16px;
+  text-align: center;
 }
 
-
-
-/* SECCIONES PRINCIPALES */
-#quiz-container,
-#intro,
-#modo-menu {
-    background: #fff;
-    border-radius: 0.5rem;
-    padding: 1rem;
-    margin-bottom: 2rem;
-    box-shadow: 0 0 0.5rem rgba(0, 0, 0, 0.1);
-    width: 100%;
+h1 {
+  font-size: clamp(1.5rem, 5vw, 3rem);
+  margin-bottom: 1rem;
 }
 
-/* TEXTO Y LISTAS */
-#intro p {
-    margin: 0.5rem 0;
+/* “CARDS” */
+.card {
+  background: #fff;
+  border-radius: 0.5rem;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  box-shadow: 0 0 0.5rem rgba(0,0,0,0.1);
+  width: 100%;
+  text-align: center;
 }
 
-#intro ul {
-    text-align: left;
-    display: inline-block;
-    padding-left: 1.5rem;
-   margin-bottom: 1rem;
+.card h2 {
+  font-size: 1.2rem;
+  margin-bottom: 0.5rem;
+}
+
+.hint {
+  opacity: 0.9;
+}
+
+/* ROW DE BOTONES */
+.row {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+
+/* INPUTS / SELECTS */
+input, select {
+  width: 100%;
+  max-width: 360px;
+  padding: 10px;
+  margin: 8px auto;
+  display: block;
+  font-size: 1rem;
 }
 
 /* AUDIO */
 #audio {
-    display: block;
-    margin: 0.5rem auto 0.5rem auto;
-    max-width: 300px;
-    width: 100%;
+  display: block;
+  margin: 0.5rem auto;
+  max-width: 300px;
+  width: 100%;
+}
+
+/* DESCRIPCIÓN */
+.description {
+  text-align: left;
+  max-width: 420px;
+  margin: 0.2rem auto 0 auto;
+  line-height: 1.35;
 }
 
 /* CONTENEDOR DE PISTAS */
-#hints-container {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    margin-bottom: 0.5rem;
-    width: 100%;
-    max-width: 300px;
-    margin-inline: auto;
+#hintsContainer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  max-width: 300px;
+  margin: 0.5rem auto 0 auto;
+  gap: 0.5rem;
 }
 
-#hints-container > button,
-#hints-container > div {
-    width: 100%;
-    max-width: 90%;
-    margin-bottom: 0.5rem;
-    font-size: 1rem;
+#hintsContainer > button,
+#hintsContainer > div {
+  width: 100%;
+  max-width: 90%;
+  font-size: 1rem;
 }
 
-/* SPOILER */
-.spoiler {
-    display: none;
-    margin: 0.5rem 0;
+/* SPOILER (div que muestra la pista) */
+#hintsContainer > div {
+  display: none;           /* el JS la alterna */
+  padding: 0.6rem 0.7rem;
+  border-radius: 0.4rem;
+  background: #f4f4f4;
+  text-align: left;
+  line-height: 1.3;
 }
 
-/* BOTONES GENERALES */
+/* RESPUESTA (input + botones) */
+.answer-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 0.5rem;
+}
+
+#answerInput {
+  width: min(60%, 360px);
+  min-width: 220px;
+  height: 2.2rem;
+  font-size: 1.1rem;
+  margin: 0;
+}
+
+#btnAnswer,
+#btnSurrender {
+  margin: 0;
+  padding: 0.75rem 1rem;
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+/* BOTONES */
 button {
-    margin: 0.8rem 0.5rem;
-    padding: 0.8rem 1.2rem;
-    font-size: 1rem;
-    cursor: pointer;
+  border: none;
+  border-radius: 0.4rem;
+  background: #e6e6e6;
+  transition: transform 0.03s ease, background 0.15s ease;
 }
 
-/* Boton de Ranking */
-#ranking-btn {
-    display: block;
-    margin: 0.5rem auto 1rem auto;
-    font-size: 1rem;
-    padding: 0.5rem 0.5rem;
+button:hover {
+  background: #dcdcdc;
 }
 
-/* INPUT + BOTÓN DE CONFIRMAR */
-#answer-input {
-    width: 60%;
-    margin-top: 1rem;
-    height: 2rem;
-    font-size: 1.2rem;
-    display: inline-block;
+button:active {
+  transform: scale(0.99);
 }
 
-#submit-btn {
-    display: inline-block;
-    vertical-align: middle;
-    margin-left: 0.5rem;
-    font-size: 1rem;
+.primary {
+  font-weight: 600;
+  background: #d9d9d9;
 }
 
-/* BOTÓN DE RENDICIÓN */
-#surrender-btn {
-    display: block;
-    margin: 0.5rem auto 1rem auto;
-    font-size: 1rem;
-    padding: 0.5rem 0.5rem;
+.secondary {
+  background: #e6e6e6;
 }
 
-/* INPUT DE NOMBRE */
-#name-input {
-    font-size: 1.1rem;
-    height: 2rem;
+/* ERRORES */
+.error {
+  color: #c00;
+  font-weight: 600;
 }
 
-/* RESULTADOS */
+/* ESTADO RESPUESTA (correcto/incorrecto como el original) */
 .correcto,
 .incorrecto {
-    font-weight: bold;
-    font-size: 1.5rem;
-    text-shadow: 0 0 1px black;
+  font-weight: bold;
+  font-size: 1.3rem;
+  text-shadow: 0 0 1px black;
 }
 
-.correcto {
-    color: green;
+.correcto { color: green; }
+.incorrecto { color: red; }
+
+/* LISTAS JUGADORES / MARCADOR */
+#playersList,
+#scoreList {
+  list-style: none;
+  padding-left: 0;
+  margin-top: 0.25rem;
 }
 
-.incorrecto {
-    color: red;
+#playersList li,
+#scoreList li {
+  padding: 0.25rem 0;
 }
 
-/* ESTADÍSTICAS */
-#score,
-#streak,
-#total-answered {
-    font-size: 1.1rem;
-    margin-top: 0.5rem;
-}
-
-/* Botón claro/oscuro */
-#theme-toggle-btn {
-    font-size: 1rem;
-    padding: 0.3rem 0.6rem;
-    margin: 0.3rem;
-    cursor: pointer;
-    border-radius: 5px;
-}
-
+/* ============================
+   DARK MODE (como tu original)
+   Solo aplica si pones body.dark-mode
+============================ */
 body.dark-mode {
-    background-color: #0d1b2a;
-    color: #e0e1dd;
+  background-color: #0d1b2a;
+  color: #e0e1dd;
 }
 
-body.dark-mode #quiz-container,
-body.dark-mode #intro,
-body.dark-mode #modo-menu {
-    background-color: #1b263b;
-    color: #e0e1dd;
+body.dark-mode .card {
+  background-color: #1b263b;
+  color: #e0e1dd;
 }
 
 body.dark-mode input,
 body.dark-mode button {
-    background-color: #415a77;
-    color: #e0e1dd;
-    border: none;
-}
-
-body.dark-mode .spoiler {
-    background-color: #778da9;
-    color: #e0e1dd;
+  background-color: #415a77;
+  color: #e0e1dd;
 }
 
 body.dark-mode button:hover {
-    background-color: #3a506b;
+  background-color: #3a506b;
 }
 
-
-/* Juego creado sin ánimo de lucro por Wildcrow */
+body.dark-mode #hintsContainer > div {
+  background-color: #778da9;
+  color: #e0e1dd;
+}

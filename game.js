@@ -3,13 +3,14 @@ import { REGLAS } from "./reglas.js";
 import { movies } from "./movies.js";
 
 // ============================
-// HINTS / LOCAL ROUND STATE
+// LOCAL ROUND STATE
 // ============================
 let hintsUsedThisRound = 0;
 let revealedHintBtns = new Set();
-
-// Para bloquear input localmente mientras llega snapshot
 let pendingAnswerForStartAt = null;
+
+// Para que syncAnswerUI no te machaque el mensaje de correcto/incorrecto
+let lastLocalFeedbackAt = 0;
 
 // ============================
 // AUDIO UNLOCK
@@ -34,9 +35,7 @@ function unlockAudioOnce() {
       audio.pause();
       audio.currentTime = 0;
       audio.muted = prevMuted;
-      console.log("[QSDC-MULTI] audio unlocked ✅");
 
-      // Si había un play pendiente, intenta programarlo
       if (pendingPlay) {
         const { startAtMs, audioUrl } = pendingPlay;
         pendingPlay = null;
@@ -49,7 +48,6 @@ function unlockAudioOnce() {
     });
 }
 
-// Primer gesto del usuario desbloquea audio
 ["click", "touchstart", "keydown"].forEach(ev => {
   window.addEventListener(ev, unlockAudioOnce, { once: true, passive: true });
 });
@@ -109,6 +107,11 @@ function setError(msg) {
   el.style.display = "block";
 }
 
+function setStatus(txt) {
+  const el = $("statusText");
+  if (el) el.textContent = txt;
+}
+
 function normalizeAnswer(s) {
   return (s || "")
     .trim()
@@ -119,33 +122,30 @@ function normalizeAnswer(s) {
     .trim();
 }
 
-function setStatus(txt) {
-  const el = $("statusText");
-  if (el) el.textContent = txt;
+function getMovie(movieIndex) {
+  return movies?.[movieIndex] || null;
 }
 
 function getAudioUrlFromMovieIndex(movieIndex) {
-  const m = movies?.[movieIndex];
+  const m = getMovie(movieIndex);
   return m?.audio || "";
 }
 
 function getPrimaryTitle(movieIndex) {
-  const m = movies?.[movieIndex];
+  const m = getMovie(movieIndex);
   if (!m) return "??";
   if (Array.isArray(m.title)) return m.title[0] ?? "??";
   return m.title ?? "??";
 }
 
 function isCorrectAnswer(raw, movieIndex) {
-  const m = movies?.[movieIndex];
+  const m = getMovie(movieIndex);
   if (!m) return false;
 
   const guess = normalizeAnswer(raw);
   const titles = Array.isArray(m.title) ? m.title : [m.title];
 
-  return titles
-    .filter(Boolean)
-    .some(t => normalizeAnswer(t) === guess);
+  return titles.filter(Boolean).some(t => normalizeAnswer(t) === guess);
 }
 
 function renderPlayers(playersObj) {
@@ -205,57 +205,6 @@ let lastScheduledStartAt = null;
 let lastRoundIndex = -1;
 
 // ============================
-// DEBUG / LOGGING
-// ============================
-const DEBUG = true;
-const LOG_PREFIX = "[QSDC-MULTI]";
-let __snapN = 0;
-
-function dlog(...args) { if (DEBUG) console.log(LOG_PREFIX, ...args); }
-function dgroup(title, obj) {
-  if (!DEBUG) return;
-  console.groupCollapsed(`${LOG_PREFIX} ${title}`);
-  if (obj !== undefined) console.log(obj);
-  console.groupEnd();
-}
-const __logOnce = new Set();
-function dlogOnce(key, ...args) {
-  if (!DEBUG) return;
-  if (__logOnce.has(key)) return;
-  __logOnce.add(key);
-  console.log(LOG_PREFIX, ...args);
-}
-
-function snapMini(room) {
-  const idx = room?.indiceActual ?? null;
-  const r = room?.round || {};
-  const startAt = r.startAt ?? null;
-  const movieIndex = r.movieIndex ?? null;
-
-  const answers = r.answers || {};
-  const answersKeys = Object.keys(answers);
-  const myAns = answers?.[playerId] || null;
-
-  return {
-    estado: room?.estado,
-    hostId: room?.hostId,
-    playerId,
-    idx,
-    startAt,
-    movieIndex,
-    playersCount: Object.keys(room?.players || {}).length,
-    answersCount: answersKeys.length,
-    answersKeys,
-    hasMyAnswerObj: !!myAns,
-    myAnswerRoundStartAt: myAns?.roundStartAt ?? null,
-    pendingAnswerForStartAt,
-    lastRoundIndex,
-    lastScheduledStartAt,
-    audioUnlocked
-  };
-}
-
-// ============================
 // TIMERS / AUDIO SYNC
 // ============================
 function clearTimers() {
@@ -267,15 +216,9 @@ function clearTimers() {
 }
 
 function scheduleSynchronizedPlay(startAtMs, audioUrl) {
-  if (!audioUrl) {
-    dlog("scheduleSynchronizedPlay(): audioUrl empty -> skip");
-    return;
-  }
-
+  if (!audioUrl) return;
   if (lastScheduledStartAt === startAtMs) return;
   lastScheduledStartAt = startAtMs;
-
-  dlog("scheduleSynchronizedPlay()", { startAtMs, audioUrl });
 
   clearTimers();
 
@@ -285,7 +228,7 @@ function scheduleSynchronizedPlay(startAtMs, audioUrl) {
   audio.src = audioUrl;
   audio.load();
 
-  // Si no está desbloqueado, guardamos el intento y esperamos gesto
+  // Si no está desbloqueado, guardamos y esperamos gesto
   if (!audioUnlocked) {
     pendingPlay = { startAtMs, audioUrl };
     setStatus("Toca la pantalla una vez para activar el audio 🔊");
@@ -330,21 +273,48 @@ async function ensureRoundInitialized(room) {
   const idx = room.indiceActual ?? 0;
   const movieIndex = playlist[idx];
 
-  if (movieIndex == null) {
-    dlog("ensureRoundInitialized(): movieIndex null -> skip", { idx, playlistLen: playlist.length });
-    return;
-  }
+  if (movieIndex == null) return;
 
   const startAt = Date.now() + 3000;
-  dlog("ensureRoundInitialized(): creating round", { idx, movieIndex, startAt });
 
   await updateRoom(roomId, {
-    round: { movieIndex, startAt, answers: {}, hintsUsed: {}, hintsUsedStartAt: {} }
+    round: {
+      movieIndex,
+      startAt,
+      answers: {},
+      hintsUsed: {},
+      hintsUsedStartAt: {},
+      revealUntil: null
+    }
   });
 }
 
 // ============================
-// HINTS RENDER
+// DESCRIPTION + MODES UI
+// ============================
+function renderModeUI(room) {
+  const mode = room.config?.modoJuego || "normal";
+
+  const descEl = $("descriptionText");
+  const surrenderBtn = $("btnSurrender");
+
+  // Locura: sin descripción y sin rendirse
+  if (mode === "locura") {
+    if (descEl) descEl.textContent = "";
+    if (surrenderBtn) surrenderBtn.style.display = "none";
+    return;
+  }
+
+  // Normal/contrarreloj/extremo: descripción sí, rendirse sí
+  if (surrenderBtn) surrenderBtn.style.display = "inline-block";
+
+  const round = room.round || {};
+  const m = getMovie(round.movieIndex);
+  if (descEl) descEl.textContent = m?.description || "";
+}
+
+// ============================
+// HINTS (solo normal/contrarreloj)
 // ============================
 async function updateHintsUsedFirestore(room, roundStartAt) {
   try {
@@ -352,22 +322,20 @@ async function updateHintsUsedFirestore(room, roundStartAt) {
       [`round.hintsUsed.${playerId}`]: hintsUsedThisRound,
       [`round.hintsUsedStartAt.${playerId}`]: roundStartAt
     });
-  } catch (e) {
-    // no rompemos nada por esto
-  }
+  } catch {}
 }
 
 function renderHintsForRound(room) {
-  const hc = document.getElementById("hintsContainer");
+  const hc = $("hintsContainer");
   if (!hc) return;
 
   hc.innerHTML = "";
 
   const mode = room.config?.modoJuego || "normal";
-  if (mode === "extremo" || mode === "locura") return;
+  if (mode !== "normal" && mode !== "contrarreloj") return;
 
   const round = room.round || {};
-  const m = movies?.[round.movieIndex];
+  const m = getMovie(round.movieIndex);
   const hints = m?.hints || [];
   if (!hints.length) return;
 
@@ -377,6 +345,7 @@ function renderHintsForRound(room) {
 
     const div = document.createElement("div");
     div.style.display = "none";
+    div.className = "spoiler";
     div.textContent = hint;
 
     btn.addEventListener("click", async () => {
@@ -396,61 +365,68 @@ function renderHintsForRound(room) {
 }
 
 // ============================
-// SUBMIT ANSWER
+// SUBMIT ANSWER / SURRENDER / PASS
 // ============================
-async function submitAnswer(room) {
-  dgroup("submitAnswer() ENTER", snapMini(room));
-
+async function submitAnswer(room, opts = {}) {
   const round = room.round || {};
-  if (!round.startAt || round.movieIndex == null) {
-    dlog("submitAnswer() abort: no valid round", { startAt: round.startAt, movieIndex: round.movieIndex });
-    return;
-  }
+  if (!round.startAt || round.movieIndex == null) return;
 
   const myAns = round.answers?.[playerId];
-  if (myAns && myAns.roundStartAt === round.startAt) {
-    dlog("submitAnswer() SKIP: already answered this round", { roundStartAt: round.startAt });
-    return;
-  }
+  if (myAns && myAns.roundStartAt === round.startAt) return;
 
+  const mode = room.config?.modoJuego || "normal";
   const input = $("answerInput");
-  const raw = input.value.trim();
-  if (!raw) return;
+  const rawTyped = (input?.value ?? "").trim();
 
-  const correct = isCorrectAnswer(raw, round.movieIndex);
+  const isSurrender = !!opts.surrender;
+  const isPassEmpty = !isSurrender && rawTyped === "" && mode === "locura"; // ✅ solo locura
 
-  // UI inmediata
+  // Si está vacío y NO es locura-pass, no enviamos (como ahora)
+  if (!isSurrender && !isPassEmpty && rawTyped === "") return;
+
+  const raw = isSurrender ? "" : rawTyped;
+  const correct = isSurrender ? false : isCorrectAnswer(raw, round.movieIndex);
+
   pendingAnswerForStartAt = round.startAt;
-  input.disabled = true;
+
+  if (input) input.disabled = true;
   $("btnAnswer").disabled = true;
+  const sBtn = $("btnSurrender");
+  if (sBtn) sBtn.disabled = true;
 
   const title = getPrimaryTitle(round.movieIndex);
-  $("answerStatus").textContent = correct ?
-     "¡Correcto! ✅ (esperando al resto)"
-    : `Incorrecto ❌ Era: ${title} (esperando al resto)`;
 
-  dlog("submitAnswer() -> writing Firestore", { correct, raw, roundStartAt: round.startAt });
+  // Mensaje que sí se vea (y que syncAnswerUI no lo pise)
+  lastLocalFeedbackAt = Date.now();
+  if (isSurrender) {
+    $("answerStatus").textContent = `Te rendiste 🏳️ Era: ${title} (esperando al resto)`;
+  } else if (isPassEmpty) {
+    $("answerStatus").textContent = `Pasaste (vacío) ❌ Era: ${title} (esperando al resto)`;
+  } else {
+    $("answerStatus").textContent = correct ?
+       "¡Correcto! ✅ (esperando al resto)"
+      : `Incorrecto ❌ Era: ${title} (esperando al resto)`;
+  }
 
   await updateRoom(roomId, {
     [`round.answers.${playerId}`]: {
       raw,
       correct,
+      surrendered: isSurrender,
+      passed: isPassEmpty,
       ts: Date.now(),
       roundStartAt: round.startAt
     }
   });
-
-  dlog("submitAnswer() -> write OK (waiting snapshot)");
 }
 
 // ============================
-// SCORING (HOST ONLY)
+// SCORING (HOST ONLY) + WAIT TO SHOW “ERA”
 // ============================
 function allPlayersAnswered(room) {
   const players = Object.keys(room.players || {});
   const answers = room.round?.answers || {};
   const startAt = room.round?.startAt;
-
   if (!startAt) return false;
 
   return players.length > 0 && players.every(pid => {
@@ -460,8 +436,6 @@ function allPlayersAnswered(room) {
 }
 
 async function hostScoreAndAdvance(room) {
-  dgroup("hostScoreAndAdvance() ENTER", snapMini(room));
-
   const isHost = room.hostId === playerId;
   if (!isHost) return;
 
@@ -469,10 +443,17 @@ async function hostScoreAndAdvance(room) {
   if (!round.answers) return;
   if (!allPlayersAnswered(room)) return;
 
-  if (room.lastScoredIndex === (room.indiceActual ?? 0)) {
-    dlog("hostScoreAndAdvance() skip: already scored idx", room.lastScoredIndex);
+  // ✅ Espera visual para ver “Era: …”
+  const now = Date.now();
+  if (!round.revealUntil) {
+    // primera vez que detecta “todos respondieron”: fija revealUntil y sale
+    await updateRoom(roomId, { "round.revealUntil": now + 1500 });
     return;
   }
+  if (now < round.revealUntil) return;
+
+  // Evitar doble scoring
+  if (room.lastScoredIndex === (room.indiceActual ?? 0)) return;
 
   const mode = room.config?.modoJuego || "normal";
   const answers = round.answers;
@@ -480,18 +461,24 @@ async function hostScoreAndAdvance(room) {
   const playersObj = room.players || {};
 
   for (const [pid, pdata] of Object.entries(playersObj)) {
-    const ans = answers[pid];
-    const correct = !!ans?.correct;
-
-    // ✅ hintsUsed solo afecta a normal/contrarreloj y SOLO si startAt coincide
-    const hintsUsed = round.hintsUsed?.[pid] ?? 0;
-    const hintsStartOk = round.hintsUsedStartAt?.[pid] === round.startAt;
+    const ans = answers[pid] || {};
+    const correct = !!ans.correct;
+    const surrendered = !!ans.surrendered;
 
     let delta = 0;
-    if (mode === "locura") delta = correct ? 10 : -20;
-    else if (mode === "extremo") delta = correct ? 7 : -3;
-    else {
-      if (correct) {
+
+    if (mode === "locura") {
+      delta = correct ? 10 : -20;
+    } else if (mode === "extremo") {
+      // incorrecto = -3, rendirse = -5
+      if (surrendered) delta = -5;
+      else delta = correct ? 7 : -3;
+    } else {
+      // normal / contrarreloj: correcto = (5 - pistas), incorrecto = 0, rendirse = -3
+      if (surrendered) delta = -3;
+      else if (correct) {
+        const hintsUsed = round.hintsUsed?.[pid] ?? 0;
+        const hintsStartOk = round.hintsUsedStartAt?.[pid] === round.startAt;
         const used = hintsStartOk ? hintsUsed : 0;
         delta = Math.max(0, 5 - used);
       } else {
@@ -517,7 +504,6 @@ async function hostScoreAndAdvance(room) {
   const currentIndex = room.indiceActual ?? 0;
   const nextIndex = currentIndex + 1;
   const total = room.config?.numPeliculas ?? (room.playlist?.length ?? 0);
-  const now = Date.now();
 
   updates.lastScoredIndex = currentIndex;
   updates.lastScoredAt = now;
@@ -535,7 +521,8 @@ async function hostScoreAndAdvance(room) {
       startAt: now + 3000,
       answers: {},
       hintsUsed: {},
-      hintsUsedStartAt: {}
+      hintsUsedStartAt: {},
+      revealUntil: null
     };
   }
 
@@ -543,33 +530,40 @@ async function hostScoreAndAdvance(room) {
 }
 
 // ============================
-// UI HELPERS
+// UI STATE PER ROUND
 // ============================
-function resetAnswerUIForNewRound() {
-  dlog("resetAnswerUIForNewRound()");
+function resetAnswerUIForNewRound(room) {
   pendingAnswerForStartAt = null;
 
   const input = $("answerInput");
-  input.value = "";
+  if (input) input.value = "";
 
   hintsUsedThisRound = 0;
   revealedHintBtns = new Set();
-  const hc = document.getElementById("hintsContainer");
+
+  const hc = $("hintsContainer");
   if (hc) hc.innerHTML = "";
 
   $("answerStatus").textContent = "Nueva ronda: escribe tu respuesta 👇";
-  setTimeout(() => input.focus(), 0);
+
+  // botones
+  $("btnAnswer").disabled = false;
+  const sBtn = $("btnSurrender");
+  if (sBtn) sBtn.disabled = false;
+
+  // foco
+  setTimeout(() => input?.focus(), 0);
 }
 
 function syncAnswerUI(room) {
-  dgroup("syncAnswerUI() ENTER", snapMini(room));
-
   const round = room.round || {};
   const hasRound = !!round.startAt && round.movieIndex != null;
 
   if (!hasRound) {
     $("answerInput").disabled = true;
     $("btnAnswer").disabled = true;
+    const sBtn = $("btnSurrender");
+    if (sBtn) sBtn.disabled = true;
     $("answerStatus").textContent = "Esperando a que empiece la ronda...";
     return;
   }
@@ -580,6 +574,8 @@ function syncAnswerUI(room) {
   if (!already && pendingAnswerForStartAt != null && pendingAnswerForStartAt === round.startAt) {
     $("answerInput").disabled = true;
     $("btnAnswer").disabled = true;
+    const sBtn = $("btnSurrender");
+    if (sBtn) sBtn.disabled = true;
     return;
   }
 
@@ -589,19 +585,32 @@ function syncAnswerUI(room) {
 
   $("answerInput").disabled = already;
   $("btnAnswer").disabled = already;
+  const sBtn = $("btnSurrender");
+  if (sBtn) sBtn.disabled = already;
 
-  if (!already) {
-    // No machacar mensajes de correcto/incorrecto cuando ya respondiste
-    $("answerStatus").textContent = "Aún no has respondido.";
+  // Si ya respondí, muestro lo que realmente se guardó (sin parpadear)
+  if (already) {
+    const title = getPrimaryTitle(round.movieIndex);
+    if (myAns.surrendered) {
+      $("answerStatus").textContent = `Te rendiste 🏳️ Era: ${title} (esperando al resto)`;
+    } else if (myAns.correct) {
+      $("answerStatus").textContent = "¡Correcto! ✅ (esperando al resto)";
+    } else {
+      $("answerStatus").textContent = `Incorrecto ❌ Era: ${title} (esperando al resto)`;
+    }
+    return;
   }
+
+  // Si NO he respondido, no machacamos un feedback reciente (por si algo raro)
+  if (Date.now() - lastLocalFeedbackAt < 800) return;
+
+  $("answerStatus").textContent = "Aún no has respondido.";
 }
 
 // ============================
 // RENDER ROOM
 // ============================
 function renderRoom(room) {
-  dgroup("renderRoom() ENTER", snapMini(room));
-
   if (!room) {
     setError("La sala no existe o ha sido eliminada.");
     return;
@@ -617,6 +626,8 @@ function renderRoom(room) {
     setStatus("Esperando a que el host inicie la partida...");
     $("answerInput").disabled = true;
     $("btnAnswer").disabled = true;
+    const sBtn = $("btnSurrender");
+    if (sBtn) sBtn.disabled = true;
     $("answerStatus").textContent = "Esperando a que empiece la ronda...";
     setError("");
     return;
@@ -645,19 +656,24 @@ function renderRoom(room) {
 
   // Nueva ronda por índice
   if (idx !== lastRoundIndex) {
-    dlog("NEW ROUND detected by idx change", { prev: lastRoundIndex, next: idx });
     lastRoundIndex = idx;
     lastScheduledStartAt = null;
     clearTimers();
-    resetAnswerUIForNewRound();
+    resetAnswerUIForNewRound(room);
   }
 
   const round = room.round || {};
   const hasRound = !!round.startAt && round.movieIndex != null;
 
   if (hasRound) {
+    // UI por modo
+    renderModeUI(room);
+
+    // audio
     const url = getAudioUrlFromMovieIndex(round.movieIndex);
     scheduleSynchronizedPlay(round.startAt, url);
+
+    // hints
     renderHintsForRound(room);
   } else {
     $("countdownText").textContent = "-";
@@ -666,6 +682,7 @@ function renderRoom(room) {
 
   syncAnswerUI(room);
 
+  // Scoring host
   hostScoreAndAdvance(room).catch(err => console.error("score:", err));
 }
 
@@ -678,6 +695,15 @@ $("btnAnswer").addEventListener("click", async () => {
     await submitAnswer(window.__currentRoom);
   } catch (e) {
     setError(e?.message || "No se pudo enviar la respuesta.");
+  }
+});
+
+$("btnSurrender")?.addEventListener("click", async () => {
+  if (!window.__currentRoom) return;
+  try {
+    await submitAnswer(window.__currentRoom, { surrender: true });
+  } catch (e) {
+    setError(e?.message || "No se pudo rendir.");
   }
 });
 
@@ -694,14 +720,8 @@ $("answerInput").addEventListener("keydown", async (e) => {
 
 // Listen
 if (roomId) {
-  dlogOnce("startup", "Starting listenRoom()", { roomId, playerId });
-
   unsub = listenRoom(roomId, (room) => {
     window.__currentRoom = room;
-
-    __snapN++;
-    dgroup(`SNAP #${__snapN}`, snapMini(room));
-
     renderRoom(room);
   });
 }
