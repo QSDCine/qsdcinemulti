@@ -647,9 +647,16 @@ function renderRoom(room) {
     setStatus("Esperando sincronización...");
   }
 
-  syncAnswerUI(room);
+syncAnswerUI(room);
 
-  hostScoreAndAdvance(room).catch(() => {});
+hostScoreAndAdvance(room).catch((e) => {
+  // IMPORTANTÍSIMO: si falla el avance, queremos verlo
+  if (room.hostId === playerId) {
+    console.error("[QSDC-MULTI] hostScoreAndAdvance failed:", e);
+    setError("HOST: No se pudo avanzar la ronda. Mira consola / reglas Firestore.");
+  }
+});
+
 }
 
 // ============================
@@ -697,15 +704,53 @@ if (answerInput) {
 // Listen
 // ============================
 let unsub = null;
+let hostWatchdog = null;
+
+function startHostWatchdog() {
+  if (hostWatchdog) return;
+
+  hostWatchdog = setInterval(async () => {
+    const room = window.__currentRoom;
+    if (!room) return;
+    if (room.estado !== "jugando") return;
+    if (room.hostId !== playerId) return;
+
+    // Si todos han contestado y ya pasó el reveal delay,
+    // intentamos avanzar (idempotente por lastScoredIndex)
+    const round = room.round || {};
+    if (!round.startAt || round.movieIndex == null) return;
+
+    const now = Date.now();
+    const revealUntil = round.revealUntil || 0;
+
+    // allPlayersAnswered está declarada más arriba en tu archivo
+    if (allPlayersAnswered(room) && now > revealUntil + 100) {
+      try {
+        await hostScoreAndAdvance(room);
+      } catch (e) {
+        console.error("[QSDC-MULTI] watchdog advance failed:", e);
+        setError("HOST: fallo al avanzar ronda (watchdog). Mira consola.");
+      }
+    }
+  }, 800);
+}
 
 if (roomId) {
-  unsub = listenRoom(roomId, (room) => {
-    window.__currentRoom = room;
-    renderRoom(room);
-  });
+ unsub = listenRoom(roomId, (room) => {
+  window.__currentRoom = room;
+  renderRoom(room);
+
+  // Si soy host, arranco watchdog para empujar avances
+  if (room && room.hostId === playerId) {
+    startHostWatchdog();
+  }
+});
 }
 
 window.addEventListener("beforeunload", () => {
   clearTimers();
+  if (hostWatchdog) clearInterval(hostWatchdog);
+  hostWatchdog = null;
   if (unsub) unsub();
 });
+
