@@ -118,7 +118,9 @@ const playlist = indices.slice(0, numPeliculas);
 
     await joinRoom(roomId, playerId, { nick, puntos: 0 });
 
-    window.location.href = `lobby.html?room=${encodeURIComponent(roomId)}`;
+  const tabId = sessionStorage.getItem("qsdcmulti_tabId");
+window.location.href = `lobby.html?room=${encodeURIComponent(roomId)}&tab=${encodeURIComponent(tabId)}`;
+
   } catch (e) {
     setError("create-error", e?.message || "Error al crear la sala.");
   }
@@ -137,7 +139,9 @@ document.getElementById("btn-join-room").addEventListener("click", async () => {
 
     await joinRoom(roomId, playerId, { nick, puntos: 0 });
 
-    window.location.href = `lobby.html?room=${encodeURIComponent(roomId)}`;
+const tabId = sessionStorage.getItem("qsdcmulti_tabId");
+window.location.href = `lobby.html?room=${encodeURIComponent(roomId)}&tab=${encodeURIComponent(tabId)}`;
+
   } catch (e) {
     setError("join-error", e?.message || "No se pudo unir a la sala.");
   }

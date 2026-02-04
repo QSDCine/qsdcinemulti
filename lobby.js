@@ -75,7 +75,9 @@ function renderRoom(room) {
 
   // ✅ Si el juego ya empezó, todos al game (host y guests)
   if (room.estado === "jugando") {
-    window.location.href = `game.html?room=${encodeURIComponent(roomId)}`;
+const tabId = sessionStorage.getItem("qsdcmulti_tabId");
+window.location.href = `game.html?room=${encodeURIComponent(roomId)}&tab=${encodeURIComponent(tabId)}`;
+
   }
 }
 

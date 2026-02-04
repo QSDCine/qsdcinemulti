@@ -1,36 +1,52 @@
 import { listenRoom, updateRoom } from "./firestore-utils.js";
 import { movies } from "./movies.js";
 
-/* ============================
-   STATE LOCAL
-============================ */
-let hintsUsedThisRound = 0;
-let revealedHintBtns = new Set();      // pistas “contadas” (penalización)
-let openedHintIdx = new Set();         // pistas abiertas (UI)
-let pendingAnswerForStartAt = null;
-
-let audioUnlocked = false;
-let pendingPlay = null; // { startAtMs, audioUrl }
-
-let countdownInterval = null;
-let scheduledPlayTimeout = null;
-
-let lastScheduledStartAt = null;
-let lastRoundIndex = -1;
-let lastHintsRenderedStartAt = null;
-
-// Para evitar “freeze” por revealUntil: timer local del host
-let hostAdvanceTimer = null;
-
-/* ============================
-   HELPERS
-============================ */
+// ============================
+// Helpers DOM
+// ============================
 function $(id) { return document.getElementById(id); }
 
 function getParam(name) {
   return new URLSearchParams(window.location.search).get(name);
 }
 
+// ============================
+// Player identity (must be stable via ?tab=)
+// ============================
+function getOrCreateDeviceId() {
+  const key = "qsdcmulti_deviceId";
+  let v = localStorage.getItem(key);
+  if (!v) {
+    v = crypto.randomUUID();
+    localStorage.setItem(key, v);
+  }
+  return v;
+}
+
+function getOrCreateTabId() {
+  const key = "qsdcmulti_tabId";
+
+  const urlTab = getParam("tab");
+  if (urlTab) {
+    sessionStorage.setItem(key, urlTab);
+    return urlTab;
+  }
+
+  let v = sessionStorage.getItem(key);
+  if (!v) {
+    v = crypto.randomUUID();
+    sessionStorage.setItem(key, v);
+  }
+  return v;
+}
+
+function getPlayerId() {
+  return `${getOrCreateDeviceId()}:${getOrCreateTabId()}`;
+}
+
+// ============================
+// UI helpers
+// ============================
 function setError(msg) {
   const el = $("gameError");
   if (!el) return;
@@ -39,13 +55,13 @@ function setError(msg) {
     el.textContent = "";
     return;
   }
-  el.textContent = msg;
   el.style.display = "block";
+  el.textContent = msg;
 }
 
 function setStatus(txt) {
   const el = $("statusText");
-  if (el) el.textContent = txt;
+  if (el) el.textContent = txt || "";
 }
 
 function normalizeAnswer(s) {
@@ -58,17 +74,12 @@ function normalizeAnswer(s) {
     .trim();
 }
 
-function getMovie(movieIndex) {
-  return movies?.[movieIndex] || null;
+function getMovie(idx) {
+  return movies && movies[idx] ? movies[idx] : null;
 }
 
-function getAudioUrlFromMovieIndex(movieIndex) {
-  const m = getMovie(movieIndex);
-  return m?.audio || "";
-}
-
-function getPrimaryTitle(movieIndex) {
-  const m = getMovie(movieIndex);
+function getPrimaryTitle(idx) {
+  const m = getMovie(idx);
   if (!m) return "??";
   if (Array.isArray(m.title)) return m.title[0] || "??";
   return m.title || "??";
@@ -83,149 +94,66 @@ function isCorrectAnswer(raw, movieIndex) {
   return titles.some(t => normalizeAnswer(t) === guess);
 }
 
-/* ============================
-   PLAYER ID (device + tab)
-============================ */
-function getOrCreateDeviceId() {
-  const deviceKey = "qsdcmulti_deviceId";
-  let deviceId = localStorage.getItem(deviceKey);
-  if (!deviceId) {
-    deviceId = crypto.randomUUID();
-    localStorage.setItem(deviceKey, deviceId);
-  }
-  return deviceId;
+function getAudioUrl(movieIndex) {
+  const m = getMovie(movieIndex);
+  return m?.audio || "";
 }
 
-function getOrCreateTabId() {
-  const tabKey = "qsdcmulti_tabId";
+// ============================
+// Render lists
+// ============================
+function renderPlayers(playersObj) {
+  const ul = $("playersList");
+  if (!ul) return;
+  ul.innerHTML = "";
 
-  const urlTab = getParam("tab");
-  if (urlTab) {
-    sessionStorage.setItem(tabKey, urlTab);
-    return urlTab;
-  }
+  const arr = Object.entries(playersObj || {}).map(([id, p]) => ({ id, ...p }));
+  arr.sort((a, b) => (a.nick || "").localeCompare(b.nick || ""));
 
-  let tabId = sessionStorage.getItem(tabKey);
-  if (tabId) return tabId;
-
-  tabId = crypto.randomUUID();
-  sessionStorage.setItem(tabKey, tabId);
-  return tabId;
-}
-
-function getOrCreatePlayerId() {
-  const deviceId = getOrCreateDeviceId();
-  const tabId = getOrCreateTabId();
-  return `${deviceId}:${tabId}`;
-}
-
-/* ============================
-   ROOM INIT
-============================ */
-const roomId = (getParam("room") || "").toUpperCase().trim();
-const tabId = getOrCreateTabId();
-const playerId = getOrCreatePlayerId();
-
-if (!roomId) setError("Falta el parámetro de sala. Vuelve al lobby.");
-if ($("roomIdText")) $("roomIdText").textContent = roomId;
-
-const btnBack = $("btnBack");
-if (btnBack) {
-  btnBack.addEventListener("click", () => {
-    window.location.href = `lobby.html?room=${encodeURIComponent(roomId)}&tab=${encodeURIComponent(tabId)}`;
-  });
-}
-
-/* ============================
-   AUDIO UNLOCK (overlay)
-   - Importante: desbloqueamos con el MISMO <audio id="audio">
-============================ */
-function showAudioOverlay(show) {
-  const overlay = $("audioUnlockOverlay");
-  if (!overlay) return;
-  overlay.style.display = show ? "flex" : "none";
-}
-
-async function unlockAudioWithUserGesture() {
-  if (audioUnlocked) return true;
-
-  try {
-    // 1) Desbloqueo global de audio en móvil con WebAudio (no necesita src)
-    const AudioCtx = window.AudioContext || window.webkitAudioContext;
-    if (AudioCtx) {
-      const ctx = new AudioCtx();
-      await ctx.resume();
-      // “ping” ultra corto inaudible
-      const o = ctx.createOscillator();
-      const g = ctx.createGain();
-      g.gain.value = 0.0001;
-      o.connect(g);
-      g.connect(ctx.destination);
-      o.start();
-      o.stop(ctx.currentTime + 0.02);
-    }
-
-    // 2) Si ya hay audio pendiente, lo dejamos listo
-    const audio = $("audio");
-    if (audio && pendingPlay?.audioUrl) {
-      if (audio.src !== pendingPlay.audioUrl) {
-        audio.src = pendingPlay.audioUrl;
-        audio.load();
-      }
-    }
-
-    audioUnlocked = true;
-    showAudioOverlay(false);
-
-    // 3) Si teníamos play pendiente, reprogramamos
-    if (pendingPlay) {
-      const { startAtMs, audioUrl } = pendingPlay;
-      pendingPlay = null;
-      scheduleSynchronizedPlay(startAtMs, audioUrl);
-    }
-
-    return true;
-  } catch (e) {
-    console.warn("No se pudo desbloquear audio:", e);
-    // aunque falle, ocultamos overlay para no bloquear UX
-    showAudioOverlay(false);
-    return false;
+  for (const p of arr) {
+    const li = document.createElement("li");
+    li.textContent = p.nick || "?";
+    ul.appendChild(li);
   }
 }
 
+function renderScores(playersObj) {
+  const ul = $("scoreList");
+  if (!ul) return;
+  ul.innerHTML = "";
 
-function attachUnlockHandlers() {
-  const btn = $("btnUnlockAudio");
-  if (btn) {
-    btn.addEventListener("click", async (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      await unlockAudioWithUserGesture();
-    });
-  }
+  const arr = Object.entries(playersObj || {}).map(([id, p]) => ({
+    id,
+    nick: p.nick || "?",
+    puntos: p.puntos ?? 0,
+    racha: p.racha ?? 0
+  }));
 
-  // El overlay no debe quedarse pegado “para siempre”
-  // Si el usuario pulsa play manual del control del audio, esto también cuenta:
-  const audio = $("audio");
-  if (audio) {
-    audio.addEventListener("play", () => {
-      if (!audioUnlocked) {
-        audioUnlocked = true;
-        showAudioOverlay(false);
-        // Si había algo pendiente, intentamos reprogramar
-        if (pendingPlay) {
-          const { startAtMs, audioUrl } = pendingPlay;
-          pendingPlay = null;
-          scheduleSynchronizedPlay(startAtMs, audioUrl);
-        }
-      }
-    });
+  arr.sort((a, b) => (b.puntos - a.puntos) || a.nick.localeCompare(b.nick));
+
+  for (const p of arr) {
+    const li = document.createElement("li");
+    li.textContent = `${p.nick}: ${p.puntos} pts (racha: ${p.racha})`;
+    ul.appendChild(li);
   }
 }
 
-/* ============================
-   TIMERS / SYNC PLAY
-============================ */
+// ============================
+// Local round state (client)
+// ============================
+let pendingAnswerForStartAt = null;
+let lastRoundIndex = -1;
+let lastScheduledStartAt = null;
+
+let hintsUsedThisRound = 0;
+let revealedHintBtns = new Set();
+
+// ============================
+// Timers / audio sync
+// ============================
+let countdownInterval = null;
+let scheduledPlayTimeout = null;
+
 function clearTimers() {
   if (countdownInterval) clearInterval(countdownInterval);
   countdownInterval = null;
@@ -244,13 +172,12 @@ function scheduleSynchronizedPlay(startAtMs, audioUrl) {
   const audio = $("audio");
   if (!audio) return;
 
-  // Preparar audio
+  // Cargamos el audio SIEMPRE. Si el autoplay falla, el usuario puede darle play.
   audio.pause();
   audio.currentTime = 0;
   audio.src = audioUrl;
   audio.load();
 
-  // Cuenta atrás siempre visible
   const tick = () => {
     const now = Date.now();
     const diff = startAtMs - now;
@@ -258,76 +185,99 @@ function scheduleSynchronizedPlay(startAtMs, audioUrl) {
     const cd = $("countdownText");
     if (cd) cd.textContent = diff <= 0 ? "¡YA!" : String(sec);
   };
+
   tick();
   countdownInterval = setInterval(tick, 200);
 
   const delay = Math.max(0, startAtMs - Date.now());
-
-  // Si no está desbloqueado, guardamos y mostramos overlay, pero NO bloqueamos el juego
-  if (!audioUnlocked) {
-    pendingPlay = { startAtMs, audioUrl };
-    setStatus("Audio pendiente (móvil puede bloquear autoplay).");
-    showAudioOverlay(true);
-    return;
-  }
-
-  setStatus("Preparando audio...");
-
   scheduledPlayTimeout = setTimeout(async () => {
     try {
       setStatus("Reproduciendo...");
       await audio.play();
+      setStatus("");
     } catch (e) {
-      // Si aún bloquea, overlay pero el juego sigue
-      setStatus("Pulsa play o “Activar audio” si el navegador lo bloquea.");
-      showAudioOverlay(true);
-      console.warn("Autoplay bloqueado:", e);
+      // Importante: NO bloqueamos nada, solo avisamos.
+      setStatus("Pulsa ▶️ si el navegador bloquea el autoplay (solo la primera vez).");
     }
   }, delay);
 }
 
-/* ============================
-   RENDER PLAYERS / SCORES
-============================ */
-function renderPlayers(playersObj) {
-  const ul = $("playersList");
-  if (!ul) return;
+// ============================
+// Hints + description + surrender UI per mode
+// ============================
+function applyModeUI(room) {
+  const mode = room.config?.modoJuego || "normal";
+  const round = room.round || {};
+  const m = getMovie(round.movieIndex);
 
-  ul.innerHTML = "";
-  const arr = Object.entries(playersObj || {}).map(([id, p]) => ({ id, ...p }));
-  arr.sort((a, b) => (a.nick || "").localeCompare(b.nick || ""));
+  const desc = $("descriptionText");
+  const surrenderBtn = $("btnSurrender");
 
-  for (const p of arr) {
-    const li = document.createElement("li");
-    li.textContent = p.nick || "?";
-    ul.appendChild(li);
+  // Descripción: en todos menos locura
+  if (desc) {
+    if (mode === "locura") desc.textContent = "";
+    else desc.textContent = m?.description || "";
+  }
+
+  // Rendirse: en todos menos locura
+  if (surrenderBtn) {
+    surrenderBtn.style.display = (mode === "locura") ? "none" : "inline-block";
   }
 }
 
-function renderScores(playersObj) {
-  const ul = $("scoreList");
-  if (!ul) return;
+// Render pistas SOLO una vez por ronda (para que no parpadeen con snapshots)
+function buildHintsForRound(room) {
+  const hc = $("hintsContainer");
+  if (!hc) return;
 
-  ul.innerHTML = "";
-  const arr = Object.entries(playersObj || {}).map(([id, p]) => ({
-    id,
-    nick: p.nick || "?",
-    puntos: p.puntos ?? 0,
-    racha: p.racha ?? 0
-  }));
+  hc.innerHTML = "";
 
-  arr.sort((a, b) => (b.puntos - a.puntos) || a.nick.localeCompare(b.nick));
+  const mode = room.config?.modoJuego || "normal";
+  if (mode !== "normal" && mode !== "contrarreloj") return;
 
-  for (const p of arr) {
-    const li = document.createElement("li");
-    li.textContent = `${p.nick}: ${p.puntos} pts (racha: ${p.racha})`;
-    ul.appendChild(li);
-  }
+  const round = room.round || {};
+  const m = getMovie(round.movieIndex);
+  const hints = m?.hints || [];
+  if (!hints.length) return;
+
+  hints.forEach((hint, i) => {
+    const btn = document.createElement("button");
+    btn.textContent = `Mostrar pista ${i + 1}`;
+
+    const div = document.createElement("div");
+    div.className = "spoiler";
+    div.style.display = "none";
+    div.textContent = hint;
+
+    btn.addEventListener("click", async () => {
+      const wasHidden = (div.style.display === "none");
+      div.style.display = wasHidden ? "block" : "none";
+
+      // Penaliza solo la 1ª vez que se revela esa pista
+      if (wasHidden && !revealedHintBtns.has(i)) {
+        revealedHintBtns.add(i);
+        hintsUsedThisRound++;
+
+        // Guardamos hintsUsed para que el host puntúe bien (5 - pistas)
+        try {
+          await updateRoom(roomId, {
+            [`round.hintsUsed.${playerId}`]: hintsUsedThisRound,
+            [`round.hintsUsedStartAt.${playerId}`]: round.startAt
+          });
+        } catch {
+          // silencioso: no rompemos UX
+        }
+      }
+    });
+
+    hc.appendChild(btn);
+    hc.appendChild(div);
+  });
 }
 
-/* ============================
-   ROUND INIT (HOST)
-============================ */
+// ============================
+// Round init (host only)
+// ============================
 async function ensureRoundInitialized(room) {
   const isHost = room.hostId === playerId;
   if (!isHost) return;
@@ -340,12 +290,12 @@ async function ensureRoundInitialized(room) {
   const movieIndex = playlist[idx];
   if (movieIndex == null) return;
 
-  const startAt = Date.now() + 3000;
+  const now = Date.now();
 
   await updateRoom(roomId, {
     round: {
       movieIndex,
-      startAt,
+      startAt: now + 3000,
       answers: {},
       hintsUsed: {},
       hintsUsedStartAt: {},
@@ -354,117 +304,9 @@ async function ensureRoundInitialized(room) {
   });
 }
 
-/* ============================
-   MODE UI (description + surrender)
-============================ */
-function renderModeUI(room) {
-  const mode = room.config?.modoJuego || "normal";
-
-  const descEl = $("descriptionText");
-  const surrenderBtn = $("btnSurrender");
-
-  if (mode === "locura") {
-    if (descEl) descEl.textContent = "";
-    if (surrenderBtn) surrenderBtn.style.display = "none";
-    return;
-  }
-
-  if (surrenderBtn) surrenderBtn.style.display = "inline-block";
-
-  const round = room.round || {};
-  const m = getMovie(round.movieIndex);
-  if (descEl) descEl.textContent = m?.description || "";
-}
-
-/* ============================
-   HINTS (render ONCE per round.startAt)
-============================ */
-async function updateHintsUsedFirestore(roundStartAt) {
-  try {
-    await updateRoom(roomId, {
-      [`round.hintsUsed.${playerId}`]: hintsUsedThisRound,
-      [`round.hintsUsedStartAt.${playerId}`]: roundStartAt
-    });
-  } catch (e) {
-    console.warn("No se pudo guardar hintsUsed:", e);
-  }
-}
-
-function renderHintsForRound(room) {
-  const hc = $("hintsContainer");
-  if (!hc) return;
-
-  const mode = room.config?.modoJuego || "normal";
-  if (mode !== "normal" && mode !== "contrarreloj") {
-    hc.innerHTML = "";
-    lastHintsRenderedStartAt = room.round?.startAt ?? null;
-    return;
-  }
-
-  const round = room.round || {};
-  const startAt = round.startAt ?? null;
-
-  // ✅ Render solo si cambia la ronda
-  if (startAt && lastHintsRenderedStartAt === startAt) {
-    // re-aplicar visible según estado local abierto/cerrado (sin recrear)
-    const divs = hc.querySelectorAll("[data-hint-div='1']");
-    divs.forEach(div => {
-      const idx = Number(div.getAttribute("data-hint-idx"));
-      div.style.display = openedHintIdx.has(idx) ? "block" : "none";
-    });
-    return;
-  }
-
-  lastHintsRenderedStartAt = startAt;
-
-  hc.innerHTML = "";
-  openedHintIdx = new Set();
-  revealedHintBtns = new Set();
-  hintsUsedThisRound = 0;
-
-  const m = getMovie(round.movieIndex);
-  const hints = m?.hints || [];
-  if (!hints.length) return;
-
-  hints.forEach((hint, i) => {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.textContent = `Mostrar pista ${i + 1}`;
-
-    const div = document.createElement("div");
-    div.className = "spoiler";
-    div.textContent = hint;
-    div.style.display = "none";
-    div.setAttribute("data-hint-div", "1");
-    div.setAttribute("data-hint-idx", String(i));
-
-    btn.addEventListener("click", async (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-
-      // Toggle
-      const willOpen = div.style.display === "none";
-      div.style.display = willOpen ? "block" : "none";
-
-      if (willOpen) openedHintIdx.add(i);
-      else openedHintIdx.delete(i);
-
-      // Penalizar SOLO la primera vez que se abre esa pista en ESTA ronda
-      if (willOpen && !revealedHintBtns.has(i)) {
-        revealedHintBtns.add(i);
-        hintsUsedThisRound += 1;
-        await updateHintsUsedFirestore(round.startAt);
-      }
-    });
-
-    hc.appendChild(btn);
-    hc.appendChild(div);
-  });
-}
-
-/* ============================
-   SUBMIT ANSWER / SURRENDER / PASS
-============================ */
+// ============================
+// Submit answer (allow empty enter) + surrender
+// ============================
 async function submitAnswer(room, opts = {}) {
   const surrendered = !!opts.surrendered;
 
@@ -475,32 +317,33 @@ async function submitAnswer(room, opts = {}) {
   if (myAns && myAns.roundStartAt === round.startAt) return;
 
   const input = $("answerInput");
-  const raw = input ? String(input.value || "").trim() : "";
+  const raw = input ? String(input.value || "") : "";
+  const trimmed = raw.trim(); // puede ser ""
 
-  // ✅ Enter con input vacío: permitido (será incorrecto)
-  const correct = surrendered ? false : isCorrectAnswer(raw, round.movieIndex);
+  const correct = surrendered ? false : isCorrectAnswer(trimmed, round.movieIndex);
 
+  // bloqueo local inmediato
   pendingAnswerForStartAt = round.startAt;
 
   if (input) input.disabled = true;
-
   const btnAnswer = $("btnAnswer");
   if (btnAnswer) btnAnswer.disabled = true;
 
   const btnSurrender = $("btnSurrender");
   if (btnSurrender) btnSurrender.disabled = true;
 
+  // feedback local
   const title = getPrimaryTitle(round.movieIndex);
-  const status = $("answerStatus");
-  if (status) {
-    if (surrendered) status.textContent = `Te has rendido 🏳️ Era: ${title} (esperando al resto)`;
-    else if (correct) status.textContent = "¡Correcto! ✅ (esperando al resto)";
-    else status.textContent = `Incorrecto ❌ Era: ${title} (esperando al resto)`;
+  const st = $("answerStatus");
+  if (st) {
+    if (surrendered) st.textContent = `Te has rendido 🏳️ Era: ${title} (esperando al resto)`;
+    else if (correct) st.textContent = "¡Correcto! ✅ (esperando al resto)";
+    else st.textContent = `Incorrecto ❌ Era: ${title} (esperando al resto)`;
   }
 
   await updateRoom(roomId, {
     [`round.answers.${playerId}`]: {
-      raw,
+      raw: trimmed,               // puede ser ""
       correct,
       surrendered,
       ts: Date.now(),
@@ -509,10 +352,61 @@ async function submitAnswer(room, opts = {}) {
   });
 }
 
-/* ============================
-   HOST SCORING + ADVANCE (con revealUntil)
-   - FIX “freeze”: programamos un timer local tras fijar revealUntil
-============================ */
+// ============================
+// Answer UI sync
+// ============================
+function syncAnswerUI(room) {
+  const round = room.round || {};
+  const hasRound = !!round.startAt && round.movieIndex != null;
+
+  const input = $("answerInput");
+  const btnAnswer = $("btnAnswer");
+  const btnSurrender = $("btnSurrender");
+  const st = $("answerStatus");
+
+  if (!hasRound) {
+    if (input) input.disabled = true;
+    if (btnAnswer) btnAnswer.disabled = true;
+    if (btnSurrender) btnSurrender.disabled = true;
+    if (st) st.textContent = "Esperando a que empiece la ronda...";
+    return;
+  }
+
+  const myAns = round.answers?.[playerId];
+  const already = !!myAns && myAns.roundStartAt === round.startAt;
+
+  // pendiente local
+  if (!already && pendingAnswerForStartAt === round.startAt) {
+    if (input) input.disabled = true;
+    if (btnAnswer) btnAnswer.disabled = true;
+    if (btnSurrender) btnSurrender.disabled = true;
+    return;
+  }
+
+  // confirmado
+  if (already && pendingAnswerForStartAt === round.startAt) {
+    pendingAnswerForStartAt = null;
+  }
+
+  if (input) input.disabled = already;
+  if (btnAnswer) btnAnswer.disabled = already;
+  if (btnSurrender) btnSurrender.disabled = already;
+
+  if (!st) return;
+
+  if (already) {
+    const title = getPrimaryTitle(round.movieIndex);
+    if (myAns.surrendered) st.textContent = `Te rendiste 🏳️ Era: ${title} (esperando al resto)`;
+    else if (myAns.correct) st.textContent = "¡Correcto! ✅ (esperando al resto)";
+    else st.textContent = `Incorrecto ❌ Era: ${title} (esperando al resto)`;
+  } else {
+    st.textContent = "Aún no has respondido.";
+  }
+}
+
+// ============================
+// Scoring (host only) + reveal delay
+// ============================
 function allPlayersAnswered(room) {
   const players = Object.keys(room.players || {});
   const answers = room.round?.answers || {};
@@ -525,23 +419,6 @@ function allPlayersAnswered(room) {
   });
 }
 
-function clearHostAdvanceTimer() {
-  if (hostAdvanceTimer) {
-    clearTimeout(hostAdvanceTimer);
-    hostAdvanceTimer = null;
-  }
-}
-
-function scheduleHostAdvanceCheck(whenMs) {
-  clearHostAdvanceTimer();
-  const delay = Math.max(0, whenMs - Date.now()) + 50; // colchón
-  hostAdvanceTimer = setTimeout(() => {
-    if (window.__currentRoom) {
-      hostScoreAndAdvance(window.__currentRoom).catch(() => {});
-    }
-  }, delay);
-}
-
 async function hostScoreAndAdvance(room) {
   const isHost = room.hostId === playerId;
   if (!isHost) return;
@@ -550,30 +427,34 @@ async function hostScoreAndAdvance(room) {
   if (!round.answers) return;
   if (!allPlayersAnswered(room)) return;
 
+  // reveal delay para que se lea "Era: ..."
   const now = Date.now();
-
-  // 1) Fijar revealUntil una vez
   if (!round.revealUntil) {
-    const until = now + 1500;
-    await updateRoom(roomId, { "round.revealUntil": until });
-    // ✅ clave: aunque no haya “otro snapshot”, nos auto-disparamos luego
-    scheduleHostAdvanceCheck(until);
+    await updateRoom(roomId, { "round.revealUntil": now + 1200 });
     return;
   }
+  if (now < round.revealUntil) return;
 
-  // 2) Esperar a que pase
-  if (now < round.revealUntil) {
-    scheduleHostAdvanceCheck(round.revealUntil);
-    return;
-  }
-
-  // Evitar doble scoring
-  if (room.lastScoredIndex === (room.indiceActual ?? 0)) return;
+  // evitar doble scoring
+  const currentIndex = room.indiceActual ?? 0;
+  if (room.lastScoredIndex === currentIndex) return;
 
   const mode = room.config?.modoJuego || "normal";
-  const answers = round.answers;
-  const updates = {};
   const playersObj = room.players || {};
+  const answers = round.answers || {};
+  const updates = {};
+
+  // Bonus contrarreloj: el más rápido correcto +3, segundo correcto +1
+  let speedBonus = {};
+  if (mode === "contrarreloj") {
+    const corrects = Object.entries(answers)
+      .filter(([, a]) => a && a.correct)
+      .sort((a, b) => (a[1].ts ?? 0) - (b[1].ts ?? 0))
+      .map(([pid]) => pid);
+
+    if (corrects[0]) speedBonus[corrects[0]] = 3;
+    if (corrects[1]) speedBonus[corrects[1]] = 1;
+  }
 
   for (const [pid, pdata] of Object.entries(playersObj)) {
     const ans = answers[pid] || {};
@@ -585,17 +466,24 @@ async function hostScoreAndAdvance(room) {
     if (mode === "locura") {
       delta = correct ? 10 : -20;
     } else if (mode === "extremo") {
-      // incorrecto = -3, rendirse = -5
       if (surrendered) delta = -5;
       else delta = correct ? 7 : -3;
+    } else if (mode === "contrarreloj") {
+      // base como normal + speed bonus
+      if (surrendered) delta = -3;
+      else if (correct) {
+        const hintsUsed = round.hintsUsed?.[pid] ?? 0;
+        const okStart = round.hintsUsedStartAt?.[pid] === round.startAt;
+        const used = okStart ? hintsUsed : 0;
+        delta = Math.max(0, 5 - used);
+      } else {
+        delta = 0;
+      }
+      delta += (speedBonus[pid] || 0);
     } else {
-      // normal / contrarreloj:
-      // rendirse = -3
-      // correcto = 5 - pistas (mín 0)
-      // incorrecto = 0
-      if (surrendered) {
-        delta = -3;
-      } else if (correct) {
+      // normal
+      if (surrendered) delta = -3;
+      else if (correct) {
         const hintsUsed = round.hintsUsed?.[pid] ?? 0;
         const okStart = round.hintsUsedStartAt?.[pid] === round.startAt;
         const used = okStart ? hintsUsed : 0;
@@ -609,18 +497,17 @@ async function hostScoreAndAdvance(room) {
     const prevRacha = pdata.racha ?? 0;
     const prevBest = pdata.mejorRacha ?? 0;
 
-    const newRacha = correct ? prevRacha + 1 : 0;
+    const newRacha = correct ? (prevRacha + 1) : 0;
     const best = Math.max(prevBest, newRacha);
 
-    let bonus = 0;
-    if (correct && newRacha > 0 && newRacha % 10 === 0) bonus = newRacha;
+    let streakBonus = 0;
+    if (correct && newRacha > 0 && newRacha % 10 === 0) streakBonus = newRacha;
 
-    updates[`players.${pid}.puntos`] = prevPts + delta + bonus;
+    updates[`players.${pid}.puntos`] = prevPts + delta + streakBonus;
     updates[`players.${pid}.racha`] = newRacha;
     updates[`players.${pid}.mejorRacha`] = best;
   }
 
-  const currentIndex = room.indiceActual ?? 0;
   const nextIndex = currentIndex + 1;
   const total = room.config?.numPeliculas ?? (room.playlist?.length ?? 0);
 
@@ -648,116 +535,72 @@ async function hostScoreAndAdvance(room) {
   await updateRoom(roomId, updates);
 }
 
-/* ============================
-   UI RESET / SYNC
-============================ */
-function resetAnswerUIForNewRound() {
+// ============================
+// Round UI reset
+// ============================
+function resetUIForNewRound(room) {
   pendingAnswerForStartAt = null;
 
   const input = $("answerInput");
-  if (input) {
-    input.value = "";
-    input.disabled = false;
-    setTimeout(() => input.focus(), 0);
-  }
-
-  const btnAnswer = $("btnAnswer");
-  if (btnAnswer) btnAnswer.disabled = false;
-
-  const btnSurrender = $("btnSurrender");
-  if (btnSurrender) btnSurrender.disabled = false;
-
-  const status = $("answerStatus");
-  if (status) status.textContent = "Nueva ronda: escribe tu respuesta 👇";
+  if (input) input.value = "";
 
   hintsUsedThisRound = 0;
   revealedHintBtns = new Set();
-  openedHintIdx = new Set();
 
-  clearHostAdvanceTimer();
+  const hc = $("hintsContainer");
+  if (hc) hc.innerHTML = "";
+
+  const st = $("answerStatus");
+  if (st) st.textContent = "Nueva ronda: escribe tu respuesta 👇";
+
+  // Rebuild hints once per round (no parpadeo)
+  buildHintsForRound(room);
+
+  // focus
+  setTimeout(() => { if (input) input.focus(); }, 0);
 }
 
-function syncAnswerUI(room) {
-  const round = room.round || {};
-  const hasRound = !!round.startAt && round.movieIndex != null;
+// ============================
+// Main render
+// ============================
+const roomId = (getParam("room") || "").toUpperCase().trim();
+const tabId = getOrCreateTabId();
+const playerId = getPlayerId();
 
-  const input = $("answerInput");
-  const btnAnswer = $("btnAnswer");
-  const btnSurrender = $("btnSurrender");
-  const status = $("answerStatus");
+if (!roomId) setError("Falta el parámetro de sala. Vuelve al lobby.");
 
-  if (!hasRound) {
-    if (input) input.disabled = true;
-    if (btnAnswer) btnAnswer.disabled = true;
-    if (btnSurrender) btnSurrender.disabled = true;
-    if (status) status.textContent = "Esperando a que empiece la ronda...";
-    return;
-  }
+const roomEl = $("roomIdText");
+if (roomEl) roomEl.textContent = roomId;
 
-  const myAns = round.answers?.[playerId];
-  const already = !!myAns && myAns.roundStartAt === round.startAt;
-
-  // pending local send
-  if (!already && pendingAnswerForStartAt != null && pendingAnswerForStartAt === round.startAt) {
-    if (input) input.disabled = true;
-    if (btnAnswer) btnAnswer.disabled = true;
-    if (btnSurrender) btnSurrender.disabled = true;
-    return;
-  }
-
-  if (already && pendingAnswerForStartAt === round.startAt) {
-    pendingAnswerForStartAt = null;
-  }
-
-  if (input) input.disabled = already;
-  if (btnAnswer) btnAnswer.disabled = already;
-  if (btnSurrender) btnSurrender.disabled = already;
-
-  if (already && status) {
-    const title = getPrimaryTitle(round.movieIndex);
-    if (myAns.surrendered) status.textContent = `Te rendiste 🏳️ Era: ${title} (esperando al resto)`;
-    else if (myAns.correct) status.textContent = "¡Correcto! ✅ (esperando al resto)";
-    else status.textContent = `Incorrecto ❌ Era: ${title} (esperando al resto)`;
-    return;
-  }
-
-  if (!already && status) {
-    status.textContent = "Aún no has respondido.";
-  }
+const btnBack = $("btnBack");
+if (btnBack) {
+  btnBack.addEventListener("click", () => {
+    window.location.href = `lobby.html?room=${encodeURIComponent(roomId)}&tab=${encodeURIComponent(tabId)}`;
+  });
 }
 
-/* ============================
-   RENDER ROOM
-============================ */
 function renderRoom(room) {
   if (!room) {
     setError("La sala no existe o ha sido eliminada.");
     return;
   }
 
+  // Finalizada => results
   if (room.estado === "finalizada") {
-    window.location.href = `results.html?room=${encodeURIComponent(roomId)}`;
+    window.location.href = `results.html?room=${encodeURIComponent(roomId)}&tab=${encodeURIComponent(tabId)}`;
     return;
   }
 
+  // Esperando
   if (room.estado === "esperando") {
     const cd = $("countdownText");
     if (cd) cd.textContent = "-";
     setStatus("Esperando a que el host inicie la partida...");
-
-    const input = $("answerInput");
-    const btnAnswer = $("btnAnswer");
-    const btnSurrender = $("btnSurrender");
-    const status = $("answerStatus");
-
-    if (input) input.disabled = true;
-    if (btnAnswer) btnAnswer.disabled = true;
-    if (btnSurrender) btnSurrender.disabled = true;
-    if (status) status.textContent = "Esperando a que empiece la ronda...";
     setError("");
     return;
   }
 
+  // Si por algo no estamos jugando, vuelve al lobby (manteniendo tab)
   if (room.estado !== "jugando") {
     window.location.href = `lobby.html?room=${encodeURIComponent(roomId)}&tab=${encodeURIComponent(tabId)}`;
     return;
@@ -766,37 +609,38 @@ function renderRoom(room) {
   setError("");
 
   const cfg = room.config || {};
-  if ($("modoText")) $("modoText").textContent = cfg.modoJuego || "-";
-  if ($("modoRondaText")) $("modoRondaText").textContent = cfg.modoRonda || "-";
+  const modoText = $("modoText");
+  const modoRondaText = $("modoRondaText");
+  if (modoText) modoText.textContent = cfg.modoJuego || "-";
+  if (modoRondaText) modoRondaText.textContent = cfg.modoRonda || "-";
 
   const idx = room.indiceActual ?? 0;
   const total = cfg.numPeliculas ?? (room.playlist?.length ?? "?");
-  if ($("roundText")) $("roundText").textContent = `${idx + 1} / ${total}`;
+  const rt = $("roundText");
+  if (rt) rt.textContent = `${idx + 1} / ${total}`;
 
   renderPlayers(room.players);
   renderScores(room.players);
 
-  ensureRoundInitialized(room).catch(err => console.error("init round:", err));
+  // Host asegura ronda
+  ensureRoundInitialized(room).catch(() => {});
 
-  // Detectar nueva ronda por índice
+  // Nueva ronda por índice
   if (idx !== lastRoundIndex) {
     lastRoundIndex = idx;
     lastScheduledStartAt = null;
-    lastHintsRenderedStartAt = null;
     clearTimers();
-    resetAnswerUIForNewRound();
+    resetUIForNewRound(room);
   }
 
   const round = room.round || {};
   const hasRound = !!round.startAt && round.movieIndex != null;
 
   if (hasRound) {
-    renderModeUI(room);
+    applyModeUI(room);
 
-    const url = getAudioUrlFromMovieIndex(round.movieIndex);
+    const url = getAudioUrl(round.movieIndex);
     scheduleSynchronizedPlay(round.startAt, url);
-
-    renderHintsForRound(room);
   } else {
     const cd = $("countdownText");
     if (cd) cd.textContent = "-";
@@ -805,59 +649,55 @@ function renderRoom(room) {
 
   syncAnswerUI(room);
 
-  // Host scoring + avance (con fix de freeze)
-  hostScoreAndAdvance(room).catch(err => console.error("score:", err));
+  hostScoreAndAdvance(room).catch(() => {});
 }
 
-/* ============================
-   EVENTS
-============================ */
-function bindEvents() {
-  const btnAnswer = $("btnAnswer");
-  if (btnAnswer) {
-    btnAnswer.addEventListener("click", async () => {
-      if (!window.__currentRoom) return;
-      try {
-        await submitAnswer(window.__currentRoom);
-      } catch (e) {
-        setError(e?.message || "No se pudo enviar la respuesta.");
-      }
-    });
-  }
-
-  const btnSurrender = $("btnSurrender");
-  if (btnSurrender) {
-    btnSurrender.addEventListener("click", async () => {
-      if (!window.__currentRoom) return;
-      try {
-        await submitAnswer(window.__currentRoom, { surrendered: true });
-      } catch (e) {
-        setError(e?.message || "No se pudo rendir.");
-      }
-    });
-  }
-
-  const input = $("answerInput");
-  if (input) {
-    input.addEventListener("keydown", async (e) => {
-      if (e.key !== "Enter") return;
-      if (!window.__currentRoom) return;
-      try {
-        await submitAnswer(window.__currentRoom);
-      } catch (err) {
-        setError(err?.message || "No se pudo enviar la respuesta.");
-      }
-    });
-  }
+// ============================
+// Events
+// ============================
+const btnAnswer = $("btnAnswer");
+if (btnAnswer) {
+  btnAnswer.addEventListener("click", async () => {
+    if (!window.__currentRoom) return;
+    try {
+      await submitAnswer(window.__currentRoom);
+    } catch (e) {
+      setError(e?.message || "No se pudo enviar la respuesta.");
+    }
+  });
 }
 
-/* ============================
-   START
-============================ */
-attachUnlockHandlers();
-bindEvents();
+const btnSurrender = $("btnSurrender");
+if (btnSurrender) {
+  btnSurrender.addEventListener("click", async () => {
+    if (!window.__currentRoom) return;
+    try {
+      await submitAnswer(window.__currentRoom, { surrendered: true });
+    } catch (e) {
+      setError(e?.message || "No se pudo rendir.");
+    }
+  });
+}
 
+const answerInput = $("answerInput");
+if (answerInput) {
+  answerInput.addEventListener("keydown", async (e) => {
+    if (e.key !== "Enter") return;
+    if (!window.__currentRoom) return;
+    try {
+      // ✅ permite enviar vacío (sirve para “pasar rápido” en locura)
+      await submitAnswer(window.__currentRoom);
+    } catch (err) {
+      setError(err?.message || "No se pudo enviar la respuesta.");
+    }
+  });
+}
+
+// ============================
+// Listen
+// ============================
 let unsub = null;
+
 if (roomId) {
   unsub = listenRoom(roomId, (room) => {
     window.__currentRoom = room;
@@ -867,6 +707,5 @@ if (roomId) {
 
 window.addEventListener("beforeunload", () => {
   clearTimers();
-  clearHostAdvanceTimer();
   if (unsub) unsub();
 });
