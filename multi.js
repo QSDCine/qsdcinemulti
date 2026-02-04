@@ -1,5 +1,5 @@
 import { createRoom, joinRoom } from "./firestore-utils.js";
-const totalDisponibles = MOVIES.length;
+const totalDisponibles = movies.length;
 
 function show(id) {
   const ids = ["screen-home", "screen-create", "screen-join"];
