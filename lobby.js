@@ -2,18 +2,26 @@ import { listenRoom, updateRoom } from "./firestore-utils.js";
 
 function $(id) { return document.getElementById(id); }
 function getParam(name) { return new URLSearchParams(window.location.search).get(name); }
-
 function getOrCreatePlayerId() {
   const deviceKey = "qsdcmulti_deviceId";
   let deviceId = localStorage.getItem(deviceKey);
   if (!deviceId) { deviceId = crypto.randomUUID(); localStorage.setItem(deviceKey, deviceId); }
 
   const tabKey = "qsdcmulti_tabId";
+
+  // ✅ IMPORTANTE: si viene tab en la URL, lo fijamos
+  const urlTab = getParam("tab");
+  if (urlTab) {
+    sessionStorage.setItem(tabKey, urlTab);
+    return `${deviceId}:${urlTab}`;
+  }
+
   let tabId = sessionStorage.getItem(tabKey);
   if (!tabId) { tabId = crypto.randomUUID(); sessionStorage.setItem(tabKey, tabId); }
 
   return `${deviceId}:${tabId}`;
 }
+
 
 function setError(msg) {
   const el = $("lobbyError");
