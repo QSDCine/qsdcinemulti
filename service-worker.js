@@ -1,4 +1,5 @@
-const CACHE_NAME = "qsdcinemulti-v5"; // cambia versión para forzar update
+const CACHE_NAME = "qsdcinemulti-v4";
+
 const CORE_ASSETS = [
   "./",
   "index.html",
@@ -9,13 +10,13 @@ const CORE_ASSETS = [
   "game.html",
   "game.js",
   "firestore-utils.js",
-  "movies.js",
   "manifest.json",
   "icon-192.png",
   "icon-512.png",
+  "movies.js",
+  "service-worker.js"
 ];
 
-// Instalar: cachea lo esencial
 self.addEventListener("install", (e) => {
   e.waitUntil(
     caches.open(CACHE_NAME).then((c) => c.addAll(CORE_ASSETS))
@@ -23,7 +24,6 @@ self.addEventListener("install", (e) => {
   self.skipWaiting();
 });
 
-// Activar: limpiar caches antiguas
 self.addEventListener("activate", (e) => {
   e.waitUntil(
     (async () => {
@@ -34,71 +34,51 @@ self.addEventListener("activate", (e) => {
   );
 });
 
-// ✅ Cachea SOLO same-origin GET. Nada de Firebase/Google APIs.
-// ✅ Evita 206 (Range) y evita cachear audio
 self.addEventListener("fetch", (event) => {
   const req = event.request;
-
   if (req.method !== "GET") return;
 
   const url = new URL(req.url);
 
-  // 🚫 No tocar llamadas a otros dominios (Firestore, gstatic, etc.)
+  // 🚫 No tocar otros dominios (Firebase/gstatic/etc.)
   if (url.origin !== self.location.origin) return;
 
-  // 🚫 No cachear peticiones con Range (audio/video suelen usarlo)
+  // 🚫 No cachear requests con Range (audio suele pedir 206)
   if (req.headers.has("range")) return;
 
-  // 🚫 No cachear audios (evita 206 y problemas de streams)
-  if (/\.(mp3|wav|ogg)$/i.test(url.pathname)) return;
+  // 🚫 No cachear audios
+  if (url.pathname.endsWith(".mp3") || url.pathname.endsWith(".wav") || url.pathname.endsWith(".ogg")) return;
 
-  const accept = req.headers.get("accept") || "";
-  const isHTML = accept.includes("text/html");
+  const isHTML = req.headers.get("accept")?.includes("text/html");
 
-  // Network-first para HTML
   if (isHTML) {
+    // network-first para HTML
     event.respondWith(
-      (async () => {
-        try {
-          const res = await fetch(req);
+      fetch(req)
+        .then((res) => {
+          // si por lo que sea viene parcial, no cachear
+          if (res.status === 206) return res;
 
-          // Solo cachear respuestas normales 200
-          if (res && res.status === 200) {
-            const copy = res.clone();
-            const cache = await caches.open(CACHE_NAME);
-            await cache.put(req, copy);
-          }
-
+          const copy = res.clone();
+          caches.open(CACHE_NAME).then((c) => c.put(req, copy));
           return res;
-        } catch {
-          const cached = await caches.match(req);
-          return cached || new Response("Offline", { status: 503 });
-        }
-      })()
+        })
+        .catch(() => caches.match(req))
     );
     return;
   }
 
-  // Cache-first para assets
+  // cache-first para el resto de assets
   event.respondWith(
-    (async () => {
-      const cached = await caches.match(req);
+    caches.match(req).then((cached) => {
       if (cached) return cached;
 
-      try {
-        const res = await fetch(req);
-
-        // Solo cachear 200
-        if (res && res.status === 200) {
-          const copy = res.clone();
-          const cache = await caches.open(CACHE_NAME);
-          await cache.put(req, copy);
-        }
-
+      return fetch(req).then((res) => {
+        if (res.status === 206) return res; // jamás cachear parciales
+        const copy = res.clone();
+        caches.open(CACHE_NAME).then((c) => c.put(req, copy));
         return res;
-      } catch {
-        return new Response("Archivo no disponible offline", { status: 503 });
-      }
-    })()
+      });
+    })
   );
 });
