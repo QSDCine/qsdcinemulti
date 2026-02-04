@@ -1,4 +1,6 @@
 import { createRoom, joinRoom } from "./firestore-utils.js";
+import { movies } from "./movies.js";
+
 const totalDisponibles = movies.length;
 
 function show(id) {
@@ -97,11 +99,13 @@ document.getElementById("btn-create-room").addEventListener("click", async () =>
 
     const roomId = makeRoomId();
 
-    // Playlist provisional: IDs 0..299
-    // (Luego lo conectamos con tu array real del script.js)
-    const indices = [...Array(300).keys()];
-    shuffle(indices);
-    const playlist = indices.slice(0, numPeliculas);
+    if (!Number.isFinite(numPeliculas) || numPeliculas < 10 || numPeliculas > totalDisponibles) {
+  return setError("create-error", `Películas: mínimo 10, máximo ${totalDisponibles}.`);
+}
+
+const indices = [...Array(totalDisponibles).keys()];
+shuffle(indices);
+const playlist = indices.slice(0, numPeliculas);
 
     await createRoom(roomId, {
       estado: "esperando",

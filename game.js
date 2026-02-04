@@ -69,10 +69,6 @@ function normalizeAnswer(s) {
     .trim();
 }
 
-// ⚠️ TEMPORAL
-function getSolutionForMovieIndex(movieIndex) {
-  return String(movieIndex);
-}
 
 // Audios
 function getAudioUrlFromMovieIndex(movieIndex) {
