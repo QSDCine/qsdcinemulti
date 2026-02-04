@@ -1,4 +1,4 @@
-import { listenRoom, updateRoom } from "./firestore-utils.js";
+import { listenRoom, startGame } from "./firestore-utils.js";
 
 function $(id) { return document.getElementById(id); }
 
@@ -19,18 +19,18 @@ function getOrCreateDeviceId() {
 function getOrCreateTabId() {
   const tabKey = "qsdcmulti_tabId";
 
-  // 1) Si viene en URL, úsalo y persístelo
+  // Si viene tab por URL, úsalo y persístelo
   const urlTab = getParam("tab");
   if (urlTab) {
     sessionStorage.setItem(tabKey, urlTab);
     return urlTab;
   }
 
-  // 2) Si existe en sessionStorage, úsalo
+  // Si existe en sessionStorage, úsalo
   let tabId = sessionStorage.getItem(tabKey);
   if (tabId) return tabId;
 
-  // 3) Si no, créalo
+  // Si no, créalo
   tabId = crypto.randomUUID();
   sessionStorage.setItem(tabKey, tabId);
   return tabId;
@@ -41,8 +41,6 @@ function getOrCreatePlayerId() {
   const tabId = getOrCreateTabId();
   return `${deviceId}:${tabId}`;
 }
-
-
 
 function setError(msg) {
   const el = $("lobbyError");
@@ -60,13 +58,10 @@ const roomId = (getParam("room") || "").toUpperCase().trim();
 const tabId = getOrCreateTabId();
 const playerId = getOrCreatePlayerId();
 
-
-
 if (!roomId) {
   setError("Falta el parámetro de sala. Vuelve al inicio e inténtalo de nuevo.");
 }
 
-// Pintar ID sala
 $("roomIdText").textContent = roomId;
 
 // Copiar ID
@@ -87,7 +82,8 @@ let unsub = null;
 let currentRoom = null;
 
 function renderRoom(room) {
-currentRoom = room;
+  currentRoom = room;
+
   if (!room) {
     setError("La sala no existe o ha sido eliminada.");
     return;
@@ -116,52 +112,32 @@ currentRoom = room;
       ul.appendChild(li);
     });
 
-  // Botón start solo host y cuando sala llena
+  // Start: solo host, y mínimo 2 jugadores (no hace falta estar “lleno”)
   const isHost = room.hostId === playerId;
-  const isFull = (cfg.maxPlayers != null) && (playersArr.length === cfg.maxPlayers);
+  const canStart = playersArr.length >= 2;
 
   const btnStart = $("btnStart");
   btnStart.style.display = isHost ? "inline-block" : "none";
-  btnStart.disabled = !isFull;
+  btnStart.disabled = !canStart;
 
-  // Si el juego ya empezó, redirigimos
-if (room.estado === "jugando") {
-  window.location.href = `game.html?room=${encodeURIComponent(roomId)}&tab=${encodeURIComponent(tabId)}`;
-}
-
-
+  // Si el juego ya empezó, redirigir SIEMPRE (host y guests)
+  if (room.estado === "jugando") {
+    window.location.href = `game.html?room=${encodeURIComponent(roomId)}&tab=${encodeURIComponent(tabId)}`;
+  }
 }
 
 $("btnStart").addEventListener("click", async () => {
   try {
     if (!currentRoom) return setError("Espera a que cargue la sala…");
 
-    const playlist = currentRoom.playlist || [];
-    const firstMovieIndex = playlist[0];
-    if (firstMovieIndex == null) return setError("La sala no tiene playlist.");
-
-    const now = Date.now();
-
-    // Evita doble click
     const btn = $("btnStart");
     btn.disabled = true;
 
-    await updateRoom(roomId, {
-      estado: "jugando",
-      indiceActual: 0,
-      lastScoredIndex: -1,
-      lastScoredAt: now,
-      round: {
-        movieIndex: firstMovieIndex,
-        startAt: now + 3000,
-        answers: {}
-      }
-    });
+    // ✅ usa el startGame “oficial” (crea round, estado=jugando, etc.)
+    await startGame(roomId);
 
-    // ✅ REDIRECCIÓN DIRECTA DEL HOST
-window.location.href = `game.html?room=${encodeURIComponent(roomId)}&tab=${encodeURIComponent(tabId)}`;
-
-
+    // Redirección host
+    window.location.href = `game.html?room=${encodeURIComponent(roomId)}&tab=${encodeURIComponent(tabId)}`;
   } catch (e) {
     console.error(e);
     setError(e?.message || "No se pudo iniciar la partida.");
@@ -169,9 +145,6 @@ window.location.href = `game.html?room=${encodeURIComponent(roomId)}&tab=${encod
   }
 });
 
-
-
-// Arrancar listener
 if (roomId) {
   unsub = listenRoom(roomId, renderRoom);
 }
