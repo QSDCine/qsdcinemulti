@@ -12,80 +12,46 @@
 
 <body>
   <div id="app">
-    <h1>Partida</h1>
+    <div id="quiz-container">
+      <h1>Partida</h1>
 
-    <!-- INFO SALA -->
-    <div class="card">
       <p><strong>ID sala:</strong> <span id="roomIdText">...</span></p>
       <p><strong>Modo:</strong> <span id="modoText">...</span></p>
       <p><strong>Multijugador:</strong> <span id="modoRondaText">...</span></p>
       <p><strong>Ronda:</strong> <span id="roundText">-</span></p>
-    </div>
 
-    <!-- CUENTA ATRÁS / ESTADO -->
-    <div class="card">
-      <h2>Cuenta atrás</h2>
-      <p id="countdownText" style="font-size: 2rem; margin: 0.2rem 0;">-</p>
+      <p id="countdownText" style="font-size: 2rem; margin: 0.6rem 0;">-</p>
       <p id="statusText" class="hint">Esperando sincronización...</p>
-    </div>
 
-    <!-- DESCRIPCIÓN (según modo) -->
-    <div class="card">
-      <h2>Descripción</h2>
-      <p id="descriptionText" class="description" style="margin: 0;">
-        <!-- game.js lo rellenará -->
-      </p>
-    </div>
+      <p id="descriptionText" style="margin: 0.8rem 0;"></p>
 
-    <!-- AUDIO -->
-    <div class="card">
-      <h2>Audio</h2>
       <audio id="audio" controls controlsList="nodownload"></audio>
-    </div>
 
-    <!-- PISTAS -->
-    <div class="card">
-      <h2>Pistas</h2>
-      <div id="hintsContainer" class="hints"></div>
-    </div>
+      <div id="hintsContainer"></div>
 
-    <!-- RESPUESTA -->
-    <div class="card">
-      <h2>Respuesta</h2>
-
-      <div class="answer-row">
-        <input
-          id="answerInput"
-          type="text"
-          placeholder="Escribe tu respuesta..."
-          autocomplete="off"
-        />
-        <button id="btnAnswer" class="primary">Responder</button>
-        <button id="btnSurrender" class="secondary" type="button">Rendirse</button>
+      <div class="row" style="align-items:center;">
+        <input id="answerInput" type="text" placeholder="Escribe tu respuesta..." autocomplete="off" />
+        <button id="btnAnswer">Responder</button>
       </div>
 
-      <p id="answerStatus" class="hint" style="margin-top: 10px;">
-        Aún no has respondido.
-      </p>
+      <div class="row">
+        <button id="btnSurrender" type="button">Rendirse</button>
+      </div>
 
-      <p id="gameError" class="error" style="display:none; margin-top: 10px;"></p>
-    </div>
+      <p id="answerStatus" class="hint" style="margin-top: 8px;">Aún no has respondido.</p>
+      <p id="gameError" class="error" style="display:none;"></p>
 
-    <!-- JUGADORES -->
-    <div class="card">
-      <h2>Jugadores</h2>
+      <hr style="margin: 14px 0; opacity: 0.3;" />
+
+      <h2 style="margin-bottom: 6px;">Jugadores</h2>
       <ul id="playersList"></ul>
-    </div>
 
-    <!-- MARCADOR -->
-    <div class="card">
-      <h2>Marcador</h2>
+      <h2 style="margin: 12px 0 6px;">Marcador</h2>
       <ul id="scoreList"></ul>
-    </div>
 
-    <!-- VOLVER -->
-    <div class="row">
-      <button id="btnBack" class="secondary">Volver al lobby</button>
+      <div class="row">
+        <button id="btnBack" class="secondary">Volver al lobby</button>
+      </div>
     </div>
   </div>
 

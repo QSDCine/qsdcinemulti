@@ -1,5 +1,4 @@
-const CACHE_NAME = "qsdcinemulti-v4";
-
+const CACHE_NAME = "qsdcinemulti-v9";
 const CORE_ASSETS = [
   "./",
   "index.html",
@@ -13,25 +12,20 @@ const CORE_ASSETS = [
   "manifest.json",
   "icon-192.png",
   "icon-512.png",
-  "movies.js",
-  "service-worker.js"
+  "movies.js"
 ];
 
 self.addEventListener("install", (e) => {
-  e.waitUntil(
-    caches.open(CACHE_NAME).then((c) => c.addAll(CORE_ASSETS))
-  );
+  e.waitUntil(caches.open(CACHE_NAME).then((c) => c.addAll(CORE_ASSETS)));
   self.skipWaiting();
 });
 
 self.addEventListener("activate", (e) => {
-  e.waitUntil(
-    (async () => {
-      const keys = await caches.keys();
-      await Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)));
-      await self.clients.claim();
-    })()
-  );
+  e.waitUntil((async () => {
+    const keys = await caches.keys();
+    await Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)));
+    await self.clients.claim();
+  })());
 });
 
 self.addEventListener("fetch", (event) => {
@@ -40,10 +34,10 @@ self.addEventListener("fetch", (event) => {
 
   const url = new URL(req.url);
 
-  // 🚫 No tocar otros dominios (Firebase/gstatic/etc.)
+  // 🚫 No tocar llamadas a otros dominios (Firestore, gstatic, etc.)
   if (url.origin !== self.location.origin) return;
 
-  // 🚫 No cachear requests con Range (audio suele pedir 206)
+  // 🚫 Si viene con Range (206) -> no cachear
   if (req.headers.has("range")) return;
 
   // 🚫 No cachear audios
@@ -52,13 +46,11 @@ self.addEventListener("fetch", (event) => {
   const isHTML = req.headers.get("accept")?.includes("text/html");
 
   if (isHTML) {
-    // network-first para HTML
     event.respondWith(
       fetch(req)
         .then((res) => {
-          // si por lo que sea viene parcial, no cachear
-          if (res.status === 206) return res;
-
+          // No cachear errores o parciales
+          if (!res || !res.ok || res.status === 206) return res;
           const copy = res.clone();
           caches.open(CACHE_NAME).then((c) => c.put(req, copy));
           return res;
@@ -68,13 +60,11 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // cache-first para el resto de assets
   event.respondWith(
     caches.match(req).then((cached) => {
       if (cached) return cached;
-
       return fetch(req).then((res) => {
-        if (res.status === 206) return res; // jamás cachear parciales
+        if (!res || !res.ok || res.status === 206) return res;
         const copy = res.clone();
         caches.open(CACHE_NAME).then((c) => c.put(req, copy));
         return res;
