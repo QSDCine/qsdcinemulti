@@ -5,8 +5,8 @@ import { movies } from "./movies.js";
    STATE LOCAL
 ============================ */
 let hintsUsedThisRound = 0;
-let revealedHintBtns = new Set();     // pistas “contadas” (penalización)
-let openedHintIdx = new Set();        // pistas actualmente abiertas (UI)
+let revealedHintBtns = new Set();      // pistas “contadas” (penalización)
+let openedHintIdx = new Set();         // pistas abiertas (UI)
 let pendingAnswerForStartAt = null;
 
 let audioUnlocked = false;
@@ -18,6 +18,9 @@ let scheduledPlayTimeout = null;
 let lastScheduledStartAt = null;
 let lastRoundIndex = -1;
 let lastHintsRenderedStartAt = null;
+
+// Para evitar “freeze” por revealUntil: timer local del host
+let hostAdvanceTimer = null;
 
 /* ============================
    HELPERS
@@ -134,7 +137,8 @@ if (btnBack) {
 }
 
 /* ============================
-   AUDIO UNLOCK (no toca el <audio> principal)
+   AUDIO UNLOCK (overlay)
+   - Importante: desbloqueamos con el MISMO <audio id="audio">
 ============================ */
 function showAudioOverlay(show) {
   const overlay = $("audioUnlockOverlay");
@@ -142,22 +146,35 @@ function showAudioOverlay(show) {
   overlay.style.display = show ? "flex" : "none";
 }
 
-async function unlockAudio() {
+async function unlockAudioWithUserGesture() {
   if (audioUnlocked) return true;
 
+  const audio = $("audio");
+  if (!audio) return false;
+
   try {
-    // “ping” con un Audio() aparte, no el de la música
-    const a = new Audio();
-    a.muted = true;
-    // play() vacío puede fallar en algunos, pero lo intentamos.
-    // Si falla, igual sirve con el gesto y el botón de overlay.
-    await a.play().catch(() => {});
-    a.pause();
+    // Si hay un play pendiente, ponemos esa src antes del play/pause
+    if (pendingPlay && pendingPlay.audioUrl) {
+      if (audio.src !== pendingPlay.audioUrl) {
+        audio.src = pendingPlay.audioUrl;
+        audio.load();
+      }
+    }
+
+    // El truco “play/pause” DENTRO del click del usuario
+    const prevMuted = audio.muted;
+    audio.muted = true;
+
+    await audio.play();
+    audio.pause();
+    audio.currentTime = 0;
+
+    audio.muted = prevMuted;
 
     audioUnlocked = true;
     showAudioOverlay(false);
 
-    // Si teníamos un play pendiente, reintenta
+    // Si teníamos reproducción pendiente, re-programamos
     if (pendingPlay) {
       const { startAtMs, audioUrl } = pendingPlay;
       pendingPlay = null;
@@ -165,7 +182,8 @@ async function unlockAudio() {
     }
 
     return true;
-  } catch {
+  } catch (e) {
+    console.warn("No se pudo desbloquear audio:", e);
     return false;
   }
 }
@@ -173,20 +191,30 @@ async function unlockAudio() {
 function attachUnlockHandlers() {
   const btn = $("btnUnlockAudio");
   if (btn) {
-    btn.addEventListener("click", async () => {
-      await unlockAudio();
-      // Intento extra: si el audio ya está cargado, play directo
-      const audio = $("audio");
-      if (audio && audio.src) {
-        audio.play().catch(() => {});
-      }
+    btn.addEventListener("click", async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      await unlockAudioWithUserGesture();
     });
   }
 
-  // Si el usuario toca cualquier parte también intentamos desbloquear
-  ["click", "touchstart", "keydown"].forEach(ev => {
-    window.addEventListener(ev, () => { unlockAudio(); }, { passive: true });
-  });
+  // El overlay no debe quedarse pegado “para siempre”
+  // Si el usuario pulsa play manual del control del audio, esto también cuenta:
+  const audio = $("audio");
+  if (audio) {
+    audio.addEventListener("play", () => {
+      if (!audioUnlocked) {
+        audioUnlocked = true;
+        showAudioOverlay(false);
+        // Si había algo pendiente, intentamos reprogramar
+        if (pendingPlay) {
+          const { startAtMs, audioUrl } = pendingPlay;
+          pendingPlay = null;
+          scheduleSynchronizedPlay(startAtMs, audioUrl);
+        }
+      }
+    });
+  }
 }
 
 /* ============================
@@ -210,13 +238,13 @@ function scheduleSynchronizedPlay(startAtMs, audioUrl) {
   const audio = $("audio");
   if (!audio) return;
 
-  // Preparar audio solo una vez por startAt
+  // Preparar audio
   audio.pause();
   audio.currentTime = 0;
   audio.src = audioUrl;
   audio.load();
 
-  // Cuenta atrás SIEMPRE visible, aunque no haya autoplay todavía
+  // Cuenta atrás siempre visible
   const tick = () => {
     const now = Date.now();
     const diff = startAtMs - now;
@@ -229,10 +257,10 @@ function scheduleSynchronizedPlay(startAtMs, audioUrl) {
 
   const delay = Math.max(0, startAtMs - Date.now());
 
-  // Si no está desbloqueado, guardamos y mostramos overlay
+  // Si no está desbloqueado, guardamos y mostramos overlay, pero NO bloqueamos el juego
   if (!audioUnlocked) {
     pendingPlay = { startAtMs, audioUrl };
-    setStatus("Toca “Activar audio” para permitir reproducción 🔊");
+    setStatus("Audio pendiente (móvil puede bloquear autoplay).");
     showAudioOverlay(true);
     return;
   }
@@ -244,7 +272,7 @@ function scheduleSynchronizedPlay(startAtMs, audioUrl) {
       setStatus("Reproduciendo...");
       await audio.play();
     } catch (e) {
-      // Si el user-agent sigue bloqueando, mostramos overlay
+      // Si aún bloquea, overlay pero el juego sigue
       setStatus("Pulsa play o “Activar audio” si el navegador lo bloquea.");
       showAudioOverlay(true);
       console.warn("Autoplay bloqueado:", e);
@@ -372,7 +400,7 @@ function renderHintsForRound(room) {
 
   // ✅ Render solo si cambia la ronda
   if (startAt && lastHintsRenderedStartAt === startAt) {
-    // Solo refrescamos visibilidad abierta/cerrada por si acaso
+    // re-aplicar visible según estado local abierto/cerrado (sin recrear)
     const divs = hc.querySelectorAll("[data-hint-div='1']");
     divs.forEach(div => {
       const idx = Number(div.getAttribute("data-hint-idx"));
@@ -384,7 +412,7 @@ function renderHintsForRound(room) {
   lastHintsRenderedStartAt = startAt;
 
   hc.innerHTML = "";
-  openedHintIdx = new Set(); // nuevo round
+  openedHintIdx = new Set();
   revealedHintBtns = new Set();
   hintsUsedThisRound = 0;
 
@@ -408,14 +436,15 @@ function renderHintsForRound(room) {
       e.preventDefault();
       e.stopPropagation();
 
-      const isHidden = div.style.display === "none";
-      div.style.display = isHidden ? "block" : "none";
+      // Toggle
+      const willOpen = div.style.display === "none";
+      div.style.display = willOpen ? "block" : "none";
 
-      if (isHidden) openedHintIdx.add(i);
+      if (willOpen) openedHintIdx.add(i);
       else openedHintIdx.delete(i);
 
       // Penalizar SOLO la primera vez que se abre esa pista en ESTA ronda
-      if (isHidden && !revealedHintBtns.has(i)) {
+      if (willOpen && !revealedHintBtns.has(i)) {
         revealedHintBtns.add(i);
         hintsUsedThisRound += 1;
         await updateHintsUsedFirestore(round.startAt);
@@ -448,6 +477,7 @@ async function submitAnswer(room, opts = {}) {
   pendingAnswerForStartAt = round.startAt;
 
   if (input) input.disabled = true;
+
   const btnAnswer = $("btnAnswer");
   if (btnAnswer) btnAnswer.disabled = true;
 
@@ -475,6 +505,7 @@ async function submitAnswer(room, opts = {}) {
 
 /* ============================
    HOST SCORING + ADVANCE (con revealUntil)
+   - FIX “freeze”: programamos un timer local tras fijar revealUntil
 ============================ */
 function allPlayersAnswered(room) {
   const players = Object.keys(room.players || {});
@@ -488,6 +519,23 @@ function allPlayersAnswered(room) {
   });
 }
 
+function clearHostAdvanceTimer() {
+  if (hostAdvanceTimer) {
+    clearTimeout(hostAdvanceTimer);
+    hostAdvanceTimer = null;
+  }
+}
+
+function scheduleHostAdvanceCheck(whenMs) {
+  clearHostAdvanceTimer();
+  const delay = Math.max(0, whenMs - Date.now()) + 50; // colchón
+  hostAdvanceTimer = setTimeout(() => {
+    if (window.__currentRoom) {
+      hostScoreAndAdvance(window.__currentRoom).catch(() => {});
+    }
+  }, delay);
+}
+
 async function hostScoreAndAdvance(room) {
   const isHost = room.hostId === playerId;
   if (!isHost) return;
@@ -498,14 +546,20 @@ async function hostScoreAndAdvance(room) {
 
   const now = Date.now();
 
-  // 1) Fijar revealUntil una vez (para que se vea “Era: …”)
+  // 1) Fijar revealUntil una vez
   if (!round.revealUntil) {
-    await updateRoom(roomId, { "round.revealUntil": now + 1500 });
+    const until = now + 1500;
+    await updateRoom(roomId, { "round.revealUntil": until });
+    // ✅ clave: aunque no haya “otro snapshot”, nos auto-disparamos luego
+    scheduleHostAdvanceCheck(until);
     return;
   }
 
-  // 2) Esperar a que pase el tiempo
-  if (now < round.revealUntil) return;
+  // 2) Esperar a que pase
+  if (now < round.revealUntil) {
+    scheduleHostAdvanceCheck(round.revealUntil);
+    return;
+  }
 
   // Evitar doble scoring
   if (room.lastScoredIndex === (room.indiceActual ?? 0)) return;
@@ -613,7 +667,8 @@ function resetAnswerUIForNewRound() {
   hintsUsedThisRound = 0;
   revealedHintBtns = new Set();
   openedHintIdx = new Set();
-  // OJO: no limpiamos hintsContainer aquí, porque renderHintsForRound controla por ronda
+
+  clearHostAdvanceTimer();
 }
 
 function syncAnswerUI(room) {
@@ -717,7 +772,7 @@ function renderRoom(room) {
 
   ensureRoundInitialized(room).catch(err => console.error("init round:", err));
 
-  // Detectar nueva ronda
+  // Detectar nueva ronda por índice
   if (idx !== lastRoundIndex) {
     lastRoundIndex = idx;
     lastScheduledStartAt = null;
@@ -744,6 +799,7 @@ function renderRoom(room) {
 
   syncAnswerUI(room);
 
+  // Host scoring + avance (con fix de freeze)
   hostScoreAndAdvance(room).catch(err => console.error("score:", err));
 }
 
@@ -805,5 +861,6 @@ if (roomId) {
 
 window.addEventListener("beforeunload", () => {
   clearTimers();
+  clearHostAdvanceTimer();
   if (unsub) unsub();
 });
