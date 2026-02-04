@@ -149,32 +149,35 @@ function showAudioOverlay(show) {
 async function unlockAudioWithUserGesture() {
   if (audioUnlocked) return true;
 
-  const audio = $("audio");
-  if (!audio) return false;
-
   try {
-    // Si hay un play pendiente, ponemos esa src antes del play/pause
-    if (pendingPlay && pendingPlay.audioUrl) {
+    // 1) Desbloqueo global de audio en móvil con WebAudio (no necesita src)
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (AudioCtx) {
+      const ctx = new AudioCtx();
+      await ctx.resume();
+      // “ping” ultra corto inaudible
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      g.gain.value = 0.0001;
+      o.connect(g);
+      g.connect(ctx.destination);
+      o.start();
+      o.stop(ctx.currentTime + 0.02);
+    }
+
+    // 2) Si ya hay audio pendiente, lo dejamos listo
+    const audio = $("audio");
+    if (audio && pendingPlay?.audioUrl) {
       if (audio.src !== pendingPlay.audioUrl) {
         audio.src = pendingPlay.audioUrl;
         audio.load();
       }
     }
 
-    // El truco “play/pause” DENTRO del click del usuario
-    const prevMuted = audio.muted;
-    audio.muted = true;
-
-    await audio.play();
-    audio.pause();
-    audio.currentTime = 0;
-
-    audio.muted = prevMuted;
-
     audioUnlocked = true;
     showAudioOverlay(false);
 
-    // Si teníamos reproducción pendiente, re-programamos
+    // 3) Si teníamos play pendiente, reprogramamos
     if (pendingPlay) {
       const { startAtMs, audioUrl } = pendingPlay;
       pendingPlay = null;
@@ -184,9 +187,12 @@ async function unlockAudioWithUserGesture() {
     return true;
   } catch (e) {
     console.warn("No se pudo desbloquear audio:", e);
+    // aunque falle, ocultamos overlay para no bloquear UX
+    showAudioOverlay(false);
     return false;
   }
 }
+
 
 function attachUnlockHandlers() {
   const btn = $("btnUnlockAudio");
