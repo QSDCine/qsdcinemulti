@@ -1,5 +1,7 @@
 import { listenRoom, updateRoom } from "./firestore-utils.js";
 import { REGLAS } from "./reglas.js";
+import { movies } from "./movies.js";
+
 
 let pendingAnswerForStartAt = null;
 
@@ -72,10 +74,22 @@ function getSolutionForMovieIndex(movieIndex) {
   return String(movieIndex);
 }
 
-// ⚠️ TEMPORAL
+// Audios
 function getAudioUrlFromMovieIndex(movieIndex) {
-  return `audio/${movieIndex}.mp3`;
+  const m = movies[movieIndex];
+  return m?.audio || "";
 }
+
+function isCorrectAnswer(raw, movieIndex) {
+  const m = movies[movieIndex];
+  if (!m) return false;
+
+  const guess = normalizeAnswer(raw);
+
+  const titles = Array.isArray(m.title) ? m.title : [m.title];
+  return titles.some(t => normalizeAnswer(t) === guess);
+}
+
 
 function setStatus(txt) {
   $("statusText").textContent = txt;
@@ -293,7 +307,8 @@ async function submitAnswer(room) {
     return;
   }
 
-  const correct = normalizeAnswer(raw) === normalizeAnswer(getSolutionForMovieIndex(round.movieIndex));
+const correct = isCorrectAnswer(raw, round.movieIndex);
+
 
   // “parche UI”: bloqueo inmediato aunque snapshot tarde
   pendingAnswerForStartAt = round.startAt;

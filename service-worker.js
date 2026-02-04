@@ -12,6 +12,8 @@ const CORE_ASSETS = [
   'manifest.json',
   'icon-192.png',
   'icon-512.png',
+  'movies.js',
+
 ];
 // Instalar: cachea lo esencial
 self.addEventListener("install", (e) => {
