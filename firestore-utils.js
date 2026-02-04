@@ -61,7 +61,7 @@ export async function joinRoom(roomId, playerId, playerData) {
 export function listenRoom(roomId, cb) {
   return onSnapshot(roomRef(roomId), (snap) => {
     if (!snap.exists()) return cb(null);
-    cb({ id: snap.id, ...snap.data() });
+    cb({ id: snap.id, ...snap.data(), _pending: snap.metadata.hasPendingWrites });
   });
 }
 
@@ -103,3 +103,4 @@ export async function updateRoomFields(roomId, fieldMap) {
   // alias por claridad, exactamente lo mismo que updateRoom
   await updateRoom(roomId, fieldMap);
 }
+
