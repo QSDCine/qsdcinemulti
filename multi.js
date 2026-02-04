@@ -22,8 +22,16 @@ function setError(elId, msg) {
   p.style.display = "block";
 }
 
-function getOrCreatePlayerId() {
-  // Persistente por dispositivo
+/**
+ * ✅ Identidad consistente:
+ * - deviceId: persistente por dispositivo (localStorage)
+ * - tabId: por sesión/pestaña (sessionStorage)
+ * - playerId: deviceId:tabId
+ *
+ * Importante: NO guardamos playerId como const global,
+ * lo pedimos justo cuando creamos/unimos, para evitar IDs "stale".
+ */
+function getOrCreateIdentity() {
   const deviceKey = "qsdcmulti_deviceId";
   let deviceId = localStorage.getItem(deviceKey);
   if (!deviceId) {
@@ -31,7 +39,6 @@ function getOrCreatePlayerId() {
     localStorage.setItem(deviceKey, deviceId);
   }
 
-  // Único por pestaña/sesión (no se comparte entre tabs)
   const tabKey = "qsdcmulti_tabId";
   let tabId = sessionStorage.getItem(tabKey);
   if (!tabId) {
@@ -39,10 +46,8 @@ function getOrCreatePlayerId() {
     sessionStorage.setItem(tabKey, tabId);
   }
 
-  // PlayerId final (único incluso en dos pestañas del mismo navegador)
-  return `${deviceId}:${tabId}`;
+  return { deviceId, tabId, playerId: `${deviceId}:${tabId}` };
 }
-
 
 function makeRoomId() {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -57,8 +62,6 @@ function shuffle(arr) {
     [arr[i], arr[j]] = [arr[j], arr[i]];
   }
 }
-
-const playerId = getOrCreatePlayerId();
 
 // Navegación UI
 document.getElementById("btn-go-create").addEventListener("click", () => {
@@ -90,37 +93,34 @@ document.getElementById("btn-create-room").addEventListener("click", async () =>
     const maxPlayers = Number(document.getElementById("create-max-players").value);
 
     if (!nick) return setError("create-error", "Pon un nick.");
-    if (!Number.isFinite(numPeliculas) || numPeliculas < 10 || numPeliculas > 300) {
-      return setError("create-error", "Películas: mínimo 10, máximo 300.");
+    if (!Number.isFinite(numPeliculas) || numPeliculas < 10 || numPeliculas > totalDisponibles) {
+      return setError("create-error", `Películas: mínimo 10, máximo ${totalDisponibles}.`);
     }
     if (!Number.isFinite(maxPlayers) || maxPlayers < 2 || maxPlayers > 10) {
       return setError("create-error", "Jugadores: mínimo 2, máximo 10.");
     }
 
+    // ✅ Pedimos identidad JUSTO AQUÍ (nunca stale)
+    const identity = getOrCreateIdentity();
+
     const roomId = makeRoomId();
 
-    if (!Number.isFinite(numPeliculas) || numPeliculas < 10 || numPeliculas > totalDisponibles) {
-  return setError("create-error", `Películas: mínimo 10, máximo ${totalDisponibles}.`);
-}
-
-const indices = [...Array(totalDisponibles).keys()];
-shuffle(indices);
-const playlist = indices.slice(0, numPeliculas);
+    const indices = [...Array(totalDisponibles).keys()];
+    shuffle(indices);
+    const playlist = indices.slice(0, numPeliculas);
 
     await createRoom(roomId, {
       estado: "esperando",
       config: { modoJuego, modoRonda, numPeliculas, maxPlayers },
       playlist,
       indiceActual: 0,
-      hostId: playerId,
+      hostId: identity.playerId,
       players: {}
     });
 
-    await joinRoom(roomId, playerId, { nick, puntos: 0 });
+    await joinRoom(roomId, identity.playerId, { nick, puntos: 0 });
 
-  const tabId = sessionStorage.getItem("qsdcmulti_tabId");
-window.location.href = `lobby.html?room=${encodeURIComponent(roomId)}&tab=${encodeURIComponent(tabId)}`;
-
+    window.location.href = `lobby.html?room=${encodeURIComponent(roomId)}&tab=${encodeURIComponent(identity.tabId)}`;
   } catch (e) {
     setError("create-error", e?.message || "Error al crear la sala.");
   }
@@ -137,11 +137,12 @@ document.getElementById("btn-join-room").addEventListener("click", async () => {
     if (!nick) return setError("join-error", "Pon un nick.");
     if (!roomId) return setError("join-error", "Pon un ID de sala.");
 
-    await joinRoom(roomId, playerId, { nick, puntos: 0 });
+    // ✅ Identidad fresca y coherente
+    const identity = getOrCreateIdentity();
 
-const tabId = sessionStorage.getItem("qsdcmulti_tabId");
-window.location.href = `lobby.html?room=${encodeURIComponent(roomId)}&tab=${encodeURIComponent(tabId)}`;
+    await joinRoom(roomId, identity.playerId, { nick, puntos: 0 });
 
+    window.location.href = `lobby.html?room=${encodeURIComponent(roomId)}&tab=${encodeURIComponent(identity.tabId)}`;
   } catch (e) {
     setError("join-error", e?.message || "No se pudo unir a la sala.");
   }
