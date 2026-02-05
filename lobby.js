@@ -111,7 +111,15 @@ $("btnStart").addEventListener("click", async () => {
       indiceActual: 0,
       lastScoredIndex: -1,
       lastScoredAt: now,
-      round: { movieIndex: firstMovieIndex, startAt: now + 3000, answers: {} }
+      round: {
+  movieIndex: firstMovieIndex,
+  startAt: now + 3000,
+  answers: {},
+  hintsUsed: {},
+  hintsUsedStartAt: {},
+  revealUntil: null
+}
+
     });
 
     // ✅ NO redirigimos aquí: dejamos que renderRoom lo haga cuando llegue el snapshot.

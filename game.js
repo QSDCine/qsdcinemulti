@@ -623,7 +623,7 @@ function renderRoom(room) {
   renderScores(room.players);
 
   // Host asegura ronda
-  ensureRoundInitialized(room).catch(() => {});
+  //ensureRoundInitialized(room).catch(() => {});
 
   // Nueva ronda por índice
   if (idx !== lastRoundIndex) {
