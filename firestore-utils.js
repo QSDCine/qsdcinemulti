@@ -59,11 +59,20 @@ export async function joinRoom(roomId, playerId, playerData) {
 }
 
 export function listenRoom(roomId, cb) {
-  return onSnapshot(roomRef(roomId), (snap) => {
-    if (!snap.exists()) return cb(null);
-    cb({ id: snap.id, ...snap.data() });
-  });
+  return onSnapshot(
+    roomRef(roomId),
+    { includeMetadataChanges: true },
+    (snap) => {
+      if (!snap.exists()) return cb(null);
+      cb({
+        id: snap.id,
+        ...snap.data(),
+        _pending: snap.metadata.hasPendingWrites,
+      });
+    }
+  );
 }
+
 
 
 export async function startGame(roomId) {
