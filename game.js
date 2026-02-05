@@ -214,7 +214,7 @@ const diff = startAtMs - now;
   };
 
   tick();
-  countdownInterval = setInterval(tick, 100);
+  countdownInterval = setInterval(tick, 200);
 
 const delay = Math.max(0, startAtMs - nowMs());
   scheduledPlayTimeout = setTimeout(async () => {
