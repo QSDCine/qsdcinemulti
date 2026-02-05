@@ -15,21 +15,33 @@ let clockOffsetMs = 0;
 function nowMs() { return Date.now() + clockOffsetMs; }
 
 let audioUnlocked = false;
+let needsUserKick = false;
+
 
 async function silentUnlockAudio() {
-  if (audioUnlocked) return;
   const audio = $("audio");
   if (!audio) return;
 
   try {
+    // “autoriza” audio en la sesión
     await audio.play();
     audio.pause();
     audio.currentTime = 0;
     audioUnlocked = true;
+
+    // si el autoplay falló antes, ahora lo relanzamos sin que toque el control
+    if (needsUserKick) {
+      needsUserKick = false;
+      await audio.play();
+    }
   } catch {
     // silencio
   }
 }
+
+document.addEventListener("pointerdown", silentUnlockAudio, { once: true });
+document.addEventListener("keydown", silentUnlockAudio, { once: true });
+
 
 // ============================
 // Player identity (must be stable via ?tab=)
@@ -64,11 +76,6 @@ function getOrCreateTabId() {
 function getPlayerId() {
   return `${getOrCreateDeviceId()}:${getOrCreateTabId()}`;
 }
-
-//audio
-document.addEventListener("pointerdown", silentUnlockAudio, { once: true });
-document.addEventListener("keydown", silentUnlockAudio, { once: true });
-
 
 
 // ============================
@@ -214,7 +221,7 @@ const diff = startAtMs - now;
   };
 
   tick();
-  countdownInterval = setInterval(tick, 200);
+  countdownInterval = setInterval(tick, 100);
 
 const delay = Math.max(0, startAtMs - nowMs());
   scheduledPlayTimeout = setTimeout(async () => {
@@ -225,6 +232,7 @@ const delay = Math.max(0, startAtMs - nowMs());
     } catch (e) {
       // Importante: NO bloqueamos nada, solo avisamos.
     //  setStatus("Pulsa ▶️ si el navegador bloquea el autoplay (solo la primera vez).");
+       needsUserKick = true;
     }
   }, delay);
 }
@@ -317,7 +325,8 @@ async function ensureRoundInitialized(room) {
   const movieIndex = playlist[idx];
   if (movieIndex == null) return;
 
-  const now = Date.now();
+const now = nowMs();
+
 
   await updateRoom(roomId, {
     round: {
@@ -455,7 +464,8 @@ async function hostScoreAndAdvance(room) {
   if (!allPlayersAnswered(room)) return;
 
   // reveal delay para que se lea "Era: ..."
-  const now = Date.now();
+const now = nowMs();
+
   if (!round.revealUntil) {
     await updateRoom(roomId, { "round.revealUntil": now + 1200 });
     return;
@@ -747,7 +757,8 @@ function startHostWatchdog() {
     const round = room.round || {};
     if (!round.startAt || round.movieIndex == null) return;
 
-    const now = Date.now();
+const now = nowMs();
+
     const revealUntil = round.revealUntil || 0;
 
     // allPlayersAnswered está declarada más arriba en tu archivo
@@ -763,21 +774,20 @@ function startHostWatchdog() {
 }
 
 if (roomId) {
+(async () => {
+  try { clockOffsetMs = await getServerClockOffsetMs(); }
+  catch { clockOffsetMs = 0; }
+  });
  unsub = listenRoom(roomId, (room) => {
-
   window.__currentRoom = room;
   renderRoom(room);
-
   // Si soy host, arranco watchdog para empujar avances
   if (room && room.hostId === playerId) {
     startHostWatchdog();
   }
 });
 }
-(async () => {
-  try { clockOffsetMs = await getServerClockOffsetMs(); }
-  catch { clockOffsetMs = 0; }
-})();
+
 window.addEventListener("beforeunload", () => {
   clearTimers();
   if (hostWatchdog) clearInterval(hostWatchdog);
