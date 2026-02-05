@@ -13,6 +13,24 @@ function getParam(name) {
 
 let clockOffsetMs = 0;
 function nowMs() { return Date.now() + clockOffsetMs; }
+
+let audioUnlocked = false;
+
+async function silentUnlockAudio() {
+  if (audioUnlocked) return;
+  const audio = $("audio");
+  if (!audio) return;
+
+  try {
+    await audio.play();
+    audio.pause();
+    audio.currentTime = 0;
+    audioUnlocked = true;
+  } catch {
+    // silencio
+  }
+}
+
 // ============================
 // Player identity (must be stable via ?tab=)
 // ============================
@@ -46,6 +64,12 @@ function getOrCreateTabId() {
 function getPlayerId() {
   return `${getOrCreateDeviceId()}:${getOrCreateTabId()}`;
 }
+
+//audio
+document.addEventListener("pointerdown", silentUnlockAudio, { once: true });
+document.addEventListener("keydown", silentUnlockAudio, { once: true });
+
+
 
 // ============================
 // UI helpers
@@ -200,7 +224,7 @@ const delay = Math.max(0, startAtMs - nowMs());
       setStatus("");
     } catch (e) {
       // Importante: NO bloqueamos nada, solo avisamos.
-      setStatus("Pulsa ▶️ si el navegador bloquea el autoplay (solo la primera vez).");
+    //  setStatus("Pulsa ▶️ si el navegador bloquea el autoplay (solo la primera vez).");
     }
   }, delay);
 }
@@ -740,10 +764,7 @@ function startHostWatchdog() {
 
 if (roomId) {
  unsub = listenRoom(roomId, (room) => {
-(async () => {
-  try { clockOffsetMs = await getServerClockOffsetMs(); }
-  catch { clockOffsetMs = 0; }
-})();
+
   window.__currentRoom = room;
   renderRoom(room);
 
@@ -753,7 +774,10 @@ if (roomId) {
   }
 });
 }
-
+(async () => {
+  try { clockOffsetMs = await getServerClockOffsetMs(); }
+  catch { clockOffsetMs = 0; }
+})();
 window.addEventListener("beforeunload", () => {
   clearTimers();
   if (hostWatchdog) clearInterval(hostWatchdog);

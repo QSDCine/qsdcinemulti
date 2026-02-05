@@ -24,12 +24,6 @@
       <p id="statusText" class="hint">Esperando sincronización...</p>
 
       <p id="descriptionText" style="margin: 0.8rem 0;"></p>
-<div id="audioUnlockOverlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:999; align-items:center; justify-content:center;">
-  <div style="background:#fff; padding:16px; border-radius:10px; width:min(420px, 92vw); text-align:center;">
-    <p style="margin-bottom:12px; font-weight:600;">Activa el audio para que el autoplay funcione en móvil 🔊</p>
-    <button id="btnUnlockAudio" class="primary" type="button">Activar audio</button>
-    <p style="margin-top:10px; font-size:.9rem; opacity:.8;">Solo hay que hacerlo una vez.</p>
-  </div>
 </div>
 
       <audio id="audio" controls controlsList="nodownload"></audio>
@@ -60,7 +54,7 @@
         <button id="btnBack" class="secondary">Volver al lobby</button>
       </div>
     </div>
-  </div>
+
 
   <script type="module" src="game.js"></script>
 
