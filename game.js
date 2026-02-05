@@ -596,7 +596,7 @@ function resetUIForNewRound(room) {
   // focus
   setTimeout(() => { if (input) input.focus(); }, 0);
 
-  needsUserKick = false;
+  // needsUserKick = false;
 
 }
 
