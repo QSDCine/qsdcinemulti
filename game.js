@@ -595,6 +595,9 @@ function resetUIForNewRound(room) {
 
   // focus
   setTimeout(() => { if (input) input.focus(); }, 0);
+
+  needsUserKick = false;
+
 }
 
 // ============================
@@ -774,19 +777,21 @@ const now = nowMs();
 }
 
 if (roomId) {
-(async () => {
-  try { clockOffsetMs = await getServerClockOffsetMs(); }
-  catch { clockOffsetMs = 0; }
-  });
- unsub = listenRoom(roomId, (room) => {
-  window.__currentRoom = room;
-  renderRoom(room);
-  // Si soy host, arranco watchdog para empujar avances
-  if (room && room.hostId === playerId) {
-    startHostWatchdog();
-  }
-});
+  (async () => {
+    try { clockOffsetMs = await getServerClockOffsetMs(); }
+    catch { clockOffsetMs = 0; }
+
+    unsub = listenRoom(roomId, (room) => {
+      window.__currentRoom = room;
+      renderRoom(room);
+
+      if (room && room.hostId === playerId) {
+        startHostWatchdog();
+      }
+    });
+  })();
 }
+
 
 window.addEventListener("beforeunload", () => {
   clearTimers();
