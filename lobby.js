@@ -87,8 +87,6 @@ if (room.estado === "jugando" && !room._pending) {
   window.location.href = `game.html?room=${encodeURIComponent(roomId)}&tab=${encodeURIComponent(tabId)}`;
 }
 
-
-  }
 }
 
 $("btnStart").addEventListener("click", async () => {
