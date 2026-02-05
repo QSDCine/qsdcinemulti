@@ -14,33 +14,33 @@ function getParam(name) {
 let clockOffsetMs = 0;
 function nowMs() { return Date.now() + clockOffsetMs; }
 
-let audioUnlocked = false;
-let needsUserKick = false;
+// let audioUnlocked = false;
+// let needsUserKick = false;
 
 
-async function silentUnlockAudio() {
-  const audio = $("audio");
-  if (!audio) return;
+// async function silentUnlockAudio() {
+//   const audio = $("audio");
+//   if (!audio) return;
 
-  try {
+//   try {
     // “autoriza” audio en la sesión
-    await audio.play();
-    audio.pause();
-    audio.currentTime = 0;
-    audioUnlocked = true;
+//     await audio.play();
+//     audio.pause();
+//     audio.currentTime = 0;
+//     audioUnlocked = true;
 
     // si el autoplay falló antes, ahora lo relanzamos sin que toque el control
-    if (needsUserKick) {
-      needsUserKick = false;
-      await audio.play();
-    }
-  } catch {
+//     if (needsUserKick) {
+ //      needsUserKick = false;
+ //      await audio.play();
+  //   }
+ //  } catch {
     // silencio
-  }
-}
+ //  }
+// }
 
-document.addEventListener("pointerdown", silentUnlockAudio, { once: true });
-document.addEventListener("keydown", silentUnlockAudio, { once: true });
+// document.addEventListener("pointerdown", silentUnlockAudio, { once: true });
+// document.addEventListener("keydown", silentUnlockAudio, { once: true });
 
 
 // ============================
@@ -232,7 +232,7 @@ const delay = Math.max(0, startAtMs - nowMs());
     } catch (e) {
       // Importante: NO bloqueamos nada, solo avisamos.
     //  setStatus("Pulsa ▶️ si el navegador bloquea el autoplay (solo la primera vez).");
-       needsUserKick = true;
+      // needsUserKick = true;
     }
   }, delay);
 }
