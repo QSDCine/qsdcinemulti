@@ -444,7 +444,7 @@ async function hostScoreAndAdvance(room) {
   const answers = round.answers || {};
   const updates = {};
 
-  // Bonus contrarreloj: el más rápido correcto +3, segundo correcto +1
+  // Bonus contrarreloj: el más rápido correcto +3, segundo correcto +1, aunque ahora mismo comentado solo
   let speedBonus = {};
   if (mode === "contrarreloj") {
     const corrects = Object.entries(answers)
@@ -453,7 +453,7 @@ async function hostScoreAndAdvance(room) {
       .map(([pid]) => pid);
 
     if (corrects[0]) speedBonus[corrects[0]] = 3;
-    if (corrects[1]) speedBonus[corrects[1]] = 1;
+    //if (corrects[1]) speedBonus[corrects[1]] = 1;
   }
 
   for (const [pid, pdata] of Object.entries(playersObj)) {
