@@ -103,3 +103,25 @@ export async function updateRoomFields(roomId, fieldMap) {
   // alias por claridad, exactamente lo mismo que updateRoom
   await updateRoom(roomId, fieldMap);
 }
+
+export async function getServerClockOffsetMs() {
+  // “Ping” simple: escribimos un serverTimestamp y lo leemos.
+  // Estimamos el tiempo del cliente en el instante del servidor como el punto medio (t0+t1)/2.
+  const ref = doc(db, "timesync", crypto.randomUUID());
+
+  const t0 = Date.now();
+  await setDoc(ref, { t: serverTimestamp() });
+  const snap = await getDoc(ref);
+  const t1 = Date.now();
+
+  const data = snap.data();
+  const serverMs = data?.t?.toMillis?.();
+  if (!serverMs) return 0;
+
+  // Limpieza (opcional)
+  try { await deleteDoc(ref); } catch {}
+
+  const clientMid = (t0 + t1) / 2;
+  return serverMs - clientMid;
+}
+

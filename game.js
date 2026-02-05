@@ -1,4 +1,4 @@
-import { listenRoom, updateRoom } from "./firestore-utils.js";
+import { listenRoom, updateRoom, getServerClockOffsetMs } from "./firestore-utils.js";
 import { movies } from "./movies.js";
 
 // ============================
@@ -10,6 +10,9 @@ function getParam(name) {
   return new URLSearchParams(window.location.search).get(name);
 }
 
+
+let clockOffsetMs = 0;
+function nowMs() { return Date.now() + clockOffsetMs; }
 // ============================
 // Player identity (must be stable via ?tab=)
 // ============================
@@ -179,17 +182,17 @@ function scheduleSynchronizedPlay(startAtMs, audioUrl) {
   audio.load();
 
   const tick = () => {
-    const now = Date.now();
-    const diff = startAtMs - now;
+const now = nowMs();
+const diff = startAtMs - now;
     const sec = Math.max(0, Math.floor((diff + 999) / 1000));
     const cd = $("countdownText");
     if (cd) cd.textContent = diff <= 0 ? "¡YA!" : String(sec);
   };
 
   tick();
-  countdownInterval = setInterval(tick, 200);
+  countdownInterval = setInterval(tick, 100);
 
-  const delay = Math.max(0, startAtMs - Date.now());
+const delay = Math.max(0, startAtMs - nowMs());
   scheduledPlayTimeout = setTimeout(async () => {
     try {
       setStatus("Reproduciendo...");
@@ -346,7 +349,7 @@ async function submitAnswer(room, opts = {}) {
       raw: trimmed,               // puede ser ""
       correct,
       surrendered,
-      ts: Date.now(),
+      ts: nowMs(),
       roundStartAt: round.startAt
     }
   });
@@ -737,6 +740,10 @@ function startHostWatchdog() {
 
 if (roomId) {
  unsub = listenRoom(roomId, (room) => {
+(async () => {
+  try { clockOffsetMs = await getServerClockOffsetMs(); }
+  catch { clockOffsetMs = 0; }
+})();
   window.__currentRoom = room;
   renderRoom(room);
 
