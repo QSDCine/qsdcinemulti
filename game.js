@@ -237,6 +237,25 @@ const delay = Math.max(0, startAtMs - nowMs());
   }, delay);
 }
 
+
+// Helpers de intentos.
+function getMode(room) {
+  return room?.config?.modoJuego || "normal";
+}
+
+function getMaxAttemptsForMode(mode) {
+  if (mode === "locura") return 1;
+  if (mode === "extremo") return 3;
+  return Infinity; // normal y contrarreloj
+}
+
+function isUnlimitedMode(mode) {
+  return getMaxAttemptsForMode(mode) === Infinity;
+}
+
+
+
+
 // ============================
 // Hints + description + surrender UI per mode
 // ============================
@@ -335,11 +354,15 @@ const now = nowMs();
       answers: {},
       hintsUsed: {},
       hintsUsedStartAt: {},
+      attemptsUsed: {},
       revealUntil: null
     }
   });
 }
 
+// ============================
+// Submit answer (allow empty enter) + surrender
+// ============================
 // ============================
 // Submit answer (allow empty enter) + surrender
 // ============================
@@ -349,8 +372,12 @@ async function submitAnswer(room, opts = {}) {
   const round = room.round || {};
   if (!round.startAt || round.movieIndex == null) return;
 
-  const myAns = round.answers?.[playerId];
-  if (myAns && myAns.roundStartAt === round.startAt) return;
+  const mode = getMode(room);
+  const maxAttempts = getMaxAttemptsForMode(mode);
+
+  // Si ya hay respuesta FINAL guardada para esta ronda, fuera
+  const myFinal = round.answers?.[playerId];
+  if (myFinal && myFinal.roundStartAt === round.startAt) return;
 
   const input = $("answerInput");
   const raw = input ? String(input.value || "") : "";
@@ -358,7 +385,76 @@ async function submitAnswer(room, opts = {}) {
 
   const correct = surrendered ? false : isCorrectAnswer(trimmed, round.movieIndex);
 
-  // bloqueo local inmediato
+  // Intentos usados (solo relevante para extremo/locura)
+  const used = round.attemptsUsed?.[playerId] ?? 0;
+
+  // Decide si esto finaliza la ronda para este jugador
+  let willFinalize = false;
+
+  if (surrendered || correct) {
+    willFinalize = true;
+  } else if (mode === "locura") {
+    willFinalize = true; // 1 intento y fuera
+  } else if (mode === "extremo") {
+    const nextUsed = used + 1;
+    const nextRemaining = Math.max(0, maxAttempts - nextUsed);
+    willFinalize = (nextRemaining <= 0);
+  } else {
+    // normal/contrarreloj: fallar NO finaliza (reintentos ilimitados)
+    willFinalize = false;
+  }
+
+  // Feedback UI
+  const title = getPrimaryTitle(round.movieIndex);
+  const st = $("answerStatus");
+  if (st) {
+    if (surrendered) st.textContent = `Te has rendido 🏳️ Era: ${title} (esperando al resto)`;
+    else if (correct) st.textContent = "¡Correcto! ✅ (esperando al resto)";
+    else {
+      if (mode === "extremo") {
+        const nextUsed = used + 1;
+        const nextRemaining = Math.max(0, maxAttempts - nextUsed);
+        st.textContent = willFinalize ?
+           `Incorrecto ❌ Era: ${title} (esperando al resto)`
+          : `Incorrecto ❌ Te quedan ${nextRemaining} intento(s).`;
+      } else if (mode === "locura") {
+        st.textContent = `Incorrecto ❌ Era: ${title} (esperando al resto)`;
+      } else {
+        st.textContent = "Incorrecto ❌ Sigue intentando...";
+      }
+    }
+  }
+
+  // Si NO finaliza:
+  // - En normal/contrarreloj: no tocamos Firestore y dejamos seguir intentando
+  // - En extremo: sí guardamos intentos usados para que no se resetee con refresh
+  if (!willFinalize) {
+    if (mode === "extremo") {
+      try {
+        await updateRoom(roomId, {
+          [`round.attemptsUsed.${playerId}`]: used + 1
+        });
+      } catch {
+        // silencioso
+      }
+    }
+
+    // UI: dejar seguir, sin bloquear
+    if (input) {
+      input.disabled = false;
+      input.focus();
+      input.select();
+    }
+    const btnAnswer = $("btnAnswer");
+    if (btnAnswer) btnAnswer.disabled = false;
+
+    const btnSurrender = $("btnSurrender");
+    if (btnSurrender) btnSurrender.disabled = false;
+
+    return;
+  }
+
+  // A partir de aquí: FINALIZA
   pendingAnswerForStartAt = round.startAt;
 
   if (input) input.disabled = true;
@@ -368,25 +464,24 @@ async function submitAnswer(room, opts = {}) {
   const btnSurrender = $("btnSurrender");
   if (btnSurrender) btnSurrender.disabled = true;
 
-  // feedback local
-  const title = getPrimaryTitle(round.movieIndex);
-  const st = $("answerStatus");
-  if (st) {
-    if (surrendered) st.textContent = `Te has rendido 🏳️ Era: ${title} (esperando al resto)`;
-    else if (correct) st.textContent = "¡Correcto! ✅ (esperando al resto)";
-    else st.textContent = `Incorrecto ❌ Era: ${title} (esperando al resto)`;
-  }
-
-  await updateRoom(roomId, {
+  const updates = {
     [`round.answers.${playerId}`]: {
-      raw: trimmed,               // puede ser ""
+      raw: trimmed,
       correct,
       surrendered,
       ts: nowMs(),
       roundStartAt: round.startAt
     }
-  });
+  };
+
+  // Si extremo falló y este era el intento final, dejamos attemptsUsed actualizado
+  if (mode === "extremo" && !correct && !surrendered) {
+    updates[`round.attemptsUsed.${playerId}`] = used + 1;
+  }
+
+  await updateRoom(roomId, updates);
 }
+
 
 // ============================
 // Answer UI sync
@@ -436,7 +531,14 @@ function syncAnswerUI(room) {
     else if (myAns.correct) st.textContent = "¡Correcto! ✅ (esperando al resto)";
     else st.textContent = `Incorrecto ❌ Era: ${title} (esperando al resto)`;
   } else {
-    st.textContent = "";
+    const mode = getMode(room);
+    if (mode === "extremo") {
+      const used = round.attemptsUsed?.[playerId] ?? 0;
+      const remaining = Math.max(0, 3 - used);
+      st.textContent = `Te quedan ${remaining} intento(s).`;
+    } else {
+      st.textContent = "";
+    }
   }
 }
 
@@ -565,6 +667,7 @@ const now = nowMs();
       answers: {},
       hintsUsed: {},
       hintsUsedStartAt: {},
+      attemptsUsed: {},
       revealUntil: null
     };
   }
