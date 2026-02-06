@@ -1,4 +1,4 @@
-const CACHE_NAME = "qsdcinemulti-v12";
+const CACHE_NAME = "qsdcinemulti-v14";
 const CORE_ASSETS = [
   "./",
   "index.html",
