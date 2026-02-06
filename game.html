@@ -12,27 +12,26 @@
 
 <body>
   <div id="app">
-    <div id="quiz-container">
-      <h1>Partida</h1>
+    <div id="quiz-container" class="card">
 
-      <p><strong>ID sala:</strong> <span id="roomIdText">...</span></p>
-      <p><strong>Modo:</strong> <span id="modoText">...</span></p>
-      <p><strong>Multijugador:</strong> <span id="modoRondaText">...</span></p>
+      <!-- INFO ÚTIL PARA JUGADOR -->
       <p><strong>Ronda:</strong> <span id="roundText">-</span></p>
 
       <p id="countdownText" style="font-size: 2rem; margin: 0.6rem 0;">-</p>
       <p id="statusText" class="hint">Esperando sincronización...</p>
 
       <p id="descriptionText" style="margin: 0.8rem 0;"></p>
-</div>
 
+      <!-- AUDIO -->
       <audio id="audio" controls controlsList="nodownload"></audio>
 
+      <!-- PISTAS -->
       <div id="hintsContainer"></div>
 
-      <div class="row" style="align-items:center;">
+      <!-- RESPUESTA -->
+      <div class="answer-row">
         <input id="answerInput" type="text" placeholder="Escribe tu respuesta..." autocomplete="off" />
-        <button id="btnAnswer">Responder</button>
+        <button id="btnAnswer" class="primary">Responder</button>
       </div>
 
       <div class="row">
@@ -44,17 +43,12 @@
 
       <hr style="margin: 14px 0; opacity: 0.3;" />
 
-      <h2 style="margin-bottom: 6px;">Jugadores</h2>
-      <ul id="playersList"></ul>
-
+      <!-- MARCADOR (se queda) -->
       <h2 style="margin: 12px 0 6px;">Marcador</h2>
       <ul id="scoreList"></ul>
 
-      <div class="row">
-        <button id="btnBack" class="secondary">Volver al lobby</button>
-      </div>
     </div>
-
+  </div>
 
   <script type="module" src="game.js"></script>
 
