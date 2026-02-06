@@ -376,3 +376,27 @@ body.dark-mode ol#resultsList li {
   background: rgba(255, 255, 255, 0.06);
   border-color: rgba(255,255,255,0.16);
 }
+
+/* ============================
+   AJUSTES GAME: pistas + rendirse
+============================ */
+
+/* Botones de pistas: un poco más compactos */
+#hintsContainer > button {
+  padding: 0.55rem 0.8rem;
+  font-size: 0.95rem;
+  min-height: 38px;
+}
+
+/* Rendirse: más pequeño todavía (que no "grite" como opción) */
+#btnSurrender {
+  padding: 0.35rem 0.7rem;
+  font-size: 0.85rem;
+  min-height: 30px;
+  opacity: 0.85;
+}
+
+/* Si quieres que el hover no lo haga destacar tanto */
+#btnSurrender:hover {
+  opacity: 1;
+}
