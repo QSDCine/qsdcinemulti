@@ -609,15 +609,15 @@ const playerId = getPlayerId();
 
 if (!roomId) setError("Falta el parámetro de sala. Vuelve al lobby.");
 
-const roomEl = $("roomIdText");
-if (roomEl) roomEl.textContent = roomId;
+// const roomEl = $("roomIdText");
+// if (roomEl) roomEl.textContent = roomId;
 
-const btnBack = $("btnBack");
-if (btnBack) {
-  btnBack.addEventListener("click", () => {
-    window.location.href = `lobby.html?room=${encodeURIComponent(roomId)}&tab=${encodeURIComponent(tabId)}`;
-  });
-}
+// const btnBack = $("btnBack");
+// if (btnBack) {
+//   btnBack.addEventListener("click", () => {
+//     window.location.href = `lobby.html?room=${encodeURIComponent(roomId)}&tab=${encodeURIComponent(tabId)}`;
+//  });
+// }
 
 function renderRoom(room) {
   if (!room) {
@@ -648,18 +648,18 @@ function renderRoom(room) {
 
   setError("");
 
-  const cfg = room.config || {};
-  const modoText = $("modoText");
-  const modoRondaText = $("modoRondaText");
-  if (modoText) modoText.textContent = cfg.modoJuego || "-";
-  if (modoRondaText) modoRondaText.textContent = cfg.modoRonda || "-";
+//   const cfg = room.config || {};
+//   const modoText = $("modoText");
+//   const modoRondaText = $("modoRondaText");
+//   if (modoText) modoText.textContent = cfg.modoJuego || "-";
+//   if (modoRondaText) modoRondaText.textContent = cfg.modoRonda || "-";
 
   const idx = room.indiceActual ?? 0;
   const total = cfg.numPeliculas ?? (room.playlist?.length ?? "?");
   const rt = $("roundText");
   if (rt) rt.textContent = `${idx + 1} / ${total}`;
 
-  renderPlayers(room.players);
+  // renderPlayers(room.players);
   renderScores(room.players);
 
   // Host asegura ronda
