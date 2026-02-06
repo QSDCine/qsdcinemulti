@@ -232,3 +232,184 @@ body.dark-mode #hintsContainer > div {
   background-color: #778da9;
   color: #e0e1dd;
 }
+
+
+/* ============================
+   HOME (index) - mismo estilo que game
+============================ */
+
+.title {
+  font-size: clamp(1.6rem, 6vw, 3rem);
+  margin-bottom: 0.35rem;
+}
+
+.subtitle {
+  opacity: 0.85;
+  margin-bottom: 1rem;
+}
+
+.home-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0.8rem auto 0.6rem auto;
+  width: 100%;
+  max-width: 360px;
+}
+
+/* Asegura que los botones del home se vean grandes y consistentes */
+.home-actions button {
+  width: 100%;
+  padding: 0.9rem 1rem;
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+/* Labels un poco más “bonitos” */
+label {
+  display: block;
+  margin: 0.6rem auto 0.15rem auto;
+  width: 100%;
+  max-width: 360px;
+  text-align: left;
+  font-weight: 600;
+  opacity: 0.9;
+}
+
+/* Listas ordenadas de resultados con mejor aire */
+ol#resultsList {
+  padding-left: 1.2rem;
+  text-align: left;
+}
+
+ol#resultsList li {
+  padding: 0.25rem 0;
+}
+
+/* Botones en cards (lobby) */
+.card button {
+  margin-top: 0.6rem;
+}
+
+/* ============================
+   LOBBY - estilo coherente con game
+============================ */
+
+#playersList {
+  list-style: none;
+  padding: 0;
+  margin: 0.6rem 0 0 0;
+  display: grid;
+  gap: 8px;
+}
+
+#playersList li {
+  padding: 0.7rem 0.9rem;
+  border-radius: 10px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  font-weight: 600;
+}
+
+/* Metadatos de lobby (modo / ronda / num pelis) */
+#lobbyMeta {
+  display: grid;
+  gap: 0.35rem;
+  margin-top: 0.6rem;
+  opacity: 0.95;
+}
+
+#lobbyMeta span {
+  font-weight: 700;
+}
+
+/* Botonera del lobby */
+.lobby-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 0.9rem;
+}
+
+.lobby-actions button {
+  flex: 1 1 160px;
+  padding: 0.9rem 1rem;
+  font-size: 1rem;
+}
+
+/* Botón start como protagonista cuando aparece */
+#btnStart {
+  font-size: 1.05rem;
+  padding: 1rem 1rem;
+}
+
+/* Room ID y copiar */
+#roomIdText {
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+#btnCopyRoom {
+  margin-top: 0.5rem;
+}
+
+/* Mensajes de error en lobby */
+#lobbyError {
+  margin-top: 0.9rem;
+}
+
+/* ============================
+   RESULTS - estilo coherente con game
+============================ */
+
+#resultsList {
+  list-style: none; /* lo hacemos tipo "ranking" */
+  padding: 0;
+  margin: 0.8rem 0 0 0;
+  display: grid;
+  gap: 10px;
+}
+
+/* Tarjeta por jugador */
+#resultsList li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+
+  padding: 0.85rem 1rem;
+  border-radius: 12px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* Si dentro del li tienes texto simple, que no se corte raro */
+#resultsList li span,
+#resultsList li strong {
+  display: inline-block;
+}
+
+/* Primera posición un pelín más destacada */
+#resultsList li:first-child {
+  border-width: 2px;
+  transform: translateY(-1px);
+}
+
+/* Botón volver */
+#btnBackHome {
+  margin-top: 1rem;
+  width: 100%;
+  padding: 0.95rem 1rem;
+  font-size: 1rem;
+}
+
+/* Título de results (si lo usas) */
+.results-title {
+  font-size: clamp(1.4rem, 5vw, 2.2rem);
+  margin-bottom: 0.25rem;
+}
+
+.results-subtitle {
+  opacity: 0.85;
+  margin-bottom: 0.8rem;
+}
