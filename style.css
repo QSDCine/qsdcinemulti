@@ -392,7 +392,8 @@ body.dark-mode ol#resultsList li {
 #btnSurrender {
   padding: 0.35rem 0.7rem;
   font-size: 0.85rem;
-  min-height: 30px;
+  min-height: 20px;
+  min-width: 20px;
   opacity: 0.85;
 }
 
