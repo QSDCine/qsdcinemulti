@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>QSDC Multi</title>
+  <title>¿Qué sabes de cine?! Multijugador!</title>
 
   <link rel="stylesheet" href="style.css" />
   <link rel="manifest" href="manifest.json" />
@@ -15,17 +15,18 @@
 
     <!-- HOME -->
     <section id="screen-home">
-      <h1 class="title">QSDC Multi</h1>
-      <p class="subtitle">Partidas privadas con sala y sincronización.</p>
+      <h1 class="title">¿Qué sabes de cine?! <br>Multijugador!</h1>
+      <p class="subtitle">Se mostrarán fragmentos de bandas sonoras o "themes" y tendréis que adivinar de qué película se trata. <br>¡Competid para ver quién sabe más!</p>
 
       <div class="home-actions">
         <button id="btn-go-create" class="primary">Crear partida</button>
         <button id="btn-go-join" class="primary">Unirse a partida</button>
-        <button id="btn-install" class="secondary">Instalar juego</button>
+        <button id="btn-rls" class="primary">Reglas</button>
+        <button id="btn-install" class="secondary">Caché</button>
       </div>
 
       <p class="hint">
-        Recomendado: pulsa <strong>Instalar juego</strong> una vez para descargar y cachear los audios.
+        Pulsa <strong>Caché</strong> para descargar y cachear los audios.
       </p>
     </section>
 
@@ -93,6 +94,14 @@
         .then(() => console.log("Service Worker registrado"));
     }
   </script>
+  <script>
+    const btnRules = document.getElementById("btn-rls");
+if (btnRules) {
+  btnRules.addEventListener("click", () => {
+    window.location.href = "rules.html";
+  });
+}
+</script>
 </body>
 </html>
 
