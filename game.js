@@ -355,6 +355,8 @@ const now = nowMs();
       hintsUsed: {},
       hintsUsedStartAt: {},
       attemptsUsed: {},
+      missed: {},
+      missedStartAt: {},
       revealUntil: null
     }
   });
@@ -428,31 +430,35 @@ async function submitAnswer(room, opts = {}) {
   // Si NO finaliza:
   // - En normal/contrarreloj: no tocamos Firestore y dejamos seguir intentando
   // - En extremo: sí guardamos intentos usados para que no se resetee con refresh
-  if (!willFinalize) {
+if (!willFinalize) {
+  try {
+    const patch = {
+      [`round.missed.${playerId}`]: true,
+      [`round.missedStartAt.${playerId}`]: round.startAt
+    };
+
+    // En extremo además persistimos intentos
     if (mode === "extremo") {
-      try {
-        await updateRoom(roomId, {
-          [`round.attemptsUsed.${playerId}`]: used + 1
-        });
-      } catch {
-        // silencioso
-      }
+      patch[`round.attemptsUsed.${playerId}`] = used + 1;
     }
 
-    // UI: dejar seguir, sin bloquear
-    if (input) {
-      input.disabled = false;
-      input.focus();
-      input.select();
-    }
-    const btnAnswer = $("btnAnswer");
-    if (btnAnswer) btnAnswer.disabled = false;
-
-    const btnSurrender = $("btnSurrender");
-    if (btnSurrender) btnSurrender.disabled = false;
-
-    return;
+    await updateRoom(roomId, patch);
+  } catch {
+    // silencioso
   }
+
+  // UI: dejar seguir, sin bloquear
+  if (input) {
+    input.disabled = false;
+    input.focus();
+    input.select();
+  }
+  const btnAnswer = $("btnAnswer");
+  if (btnAnswer) btnAnswer.disabled = false;
+
+  return;
+}
+
 
   // A partir de aquí: FINALIZA
   pendingAnswerForStartAt = round.startAt;
@@ -636,7 +642,18 @@ const now = nowMs();
     const prevRacha = pdata.racha ?? 0;
     const prevBest = pdata.mejorRacha ?? 0;
 
-    const newRacha = correct ? (prevRacha + 1) : 0;
+const hadMiss =
+  (round.missedStartAt?.[pid] === round.startAt) &&
+  !!round.missed?.[pid];
+
+let newRacha = 0;
+if (correct) {
+  // si falló antes en ESTA ronda/peli, la racha “reinicia” y pasa a 1
+  newRacha = hadMiss ? 1 : (prevRacha + 1);
+} else {
+  newRacha = 0;
+}
+
     const best = Math.max(prevBest, newRacha);
 
     let streakBonus = 0;
@@ -668,6 +685,8 @@ const now = nowMs();
       hintsUsed: {},
       hintsUsedStartAt: {},
       attemptsUsed: {},
+      missed: {},
+      missedStartAt: {},
       revealUntil: null
     };
   }
