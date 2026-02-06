@@ -436,7 +436,7 @@ function syncAnswerUI(room) {
     else if (myAns.correct) st.textContent = "¡Correcto! ✅ (esperando al resto)";
     else st.textContent = `Incorrecto ❌ Era: ${title} (esperando al resto)`;
   } else {
-    st.textContent = "Aún no has respondido.";
+    st.textContent = "";
   }
 }
 
