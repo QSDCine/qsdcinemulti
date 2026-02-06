@@ -648,7 +648,7 @@ function renderRoom(room) {
 
   setError("");
 
-//   const cfg = room.config || {};
+   const cfg = room.config || {};
 //   const modoText = $("modoText");
 //   const modoRondaText = $("modoRondaText");
 //   if (modoText) modoText.textContent = cfg.modoJuego || "-";
