@@ -142,19 +142,30 @@ select:focus {
 .answer-row {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  margin-top: 0.5rem;
+  justify-content: flex-start; /* ya no centrado */
+  gap: 0.6rem;
+  margin: 0.6rem auto 0 auto;
+  max-width: 420px;            /* encaja con description */
 }
 
+.answer-row #btnAnswer {
+  min-width: auto;       /* rompe el 150px */
+  padding: 0.75rem 1rem;
+  font-size: 0.95rem;
+  white-space: nowrap;
+  min-height: 20px;
+}
+
+
+
 #answerInput {
-  width: min(60%, 360px);
-  min-width: 220px;
+  flex: 1;               /* ocupa todo lo posible */
+  min-width: 0;          /* evita overflow en móvil */
   height: 2.4rem;
   font-size: 1.05rem;
   margin: 0;
 }
+
 
 /* ============================
    BOTONES (unificados)
