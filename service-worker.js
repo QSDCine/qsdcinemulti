@@ -38,35 +38,27 @@ self.addEventListener("fetch", (event) => {
   // 🚫 No tocar llamadas a otros dominios (Firestore, gstatic, etc.)
   if (url.origin !== self.location.origin) return;
 
-  // 🚫 Si viene con Range (206) -> no cachear ANTIGUO
- // if (req.headers.has("range")) return;
+  // 🚫 Si viene con Range (206) -> no cachear
+  if (req.headers.has("range")) return;
 
   // 🚫 No cachear audios ANTIGUO
  // if (url.pathname.endsWith(".mp3") || url.pathname.endsWith(".wav") || url.pathname.endsWith(".ogg")) return;
 
 // ✅ Audios: cache-first (si existe en caché, no toca servidor)
-// ✅ Audios: cache-first (y compatible con Range)
 if (url.pathname.endsWith(".mp3") || url.pathname.endsWith(".wav") || url.pathname.endsWith(".ogg")) {
   event.respondWith((async () => {
     const cache = await caches.open(AUDIO_CACHE);
-
-    // Match por URL (ignorando headers como Range)
-    const cached = await cache.match(url.href);
+    const cached = await cache.match(req);
     if (cached) return cached;
 
-    // Si no está cacheado, pedimos a red (puede ser Range)
     const res = await fetch(req);
-
-    // Solo cacheamos si NO es Range y la respuesta es buena
-    if (!req.headers.has("range") && res && res.ok && res.status !== 206) {
-      cache.put(url.href, res.clone());
+    if (res && res.ok) {
+      cache.put(req, res.clone());
     }
-
     return res;
   })());
   return;
 }
-
 
 
   const isHTML = req.headers.get("accept")?.includes("text/html");
