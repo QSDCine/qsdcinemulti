@@ -74,10 +74,9 @@ document.getElementById("btn-go-join").addEventListener("click", () => {
 document.getElementById("btn-back-from-create").addEventListener("click", () => show("screen-home"));
 document.getElementById("btn-back-from-join").addEventListener("click", () => show("screen-home"));
 
-// Boton offline eliminado
-// document.getElementById("btn-install").addEventListener("click", () => {
-//  window.location.href = "offline.html";
-//});
+document.getElementById("btn-install").addEventListener("click", () => {
+window.location.href = "offline.html";
+});
 
 // Crear sala
 document.getElementById("btn-create-room").addEventListener("click", async () => {
