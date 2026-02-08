@@ -105,7 +105,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   progresoEl.textContent = `0 MB de ${estimacionMB} MB`;
 
 try {
-  const cache = await caches.open("qsdcine");
+  const cache = await caches.open("qsdcine-audio-v1");
   const cachedRequests = await cache.keys();
 
 cachedRequests.forEach(req => console.log(req.url));
