@@ -1,5 +1,4 @@
 const CACHE_NAME = "qsdcinemulti-v16";
-const AUDIO_CACHE = "qsdcine-audio-v1";
 const CORE_ASSETS = [
   "./",
   "index.html",
@@ -41,25 +40,8 @@ self.addEventListener("fetch", (event) => {
   // 🚫 Si viene con Range (206) -> no cachear
   if (req.headers.has("range")) return;
 
-  // 🚫 No cachear audios ANTIGUO
- // if (url.pathname.endsWith(".mp3") || url.pathname.endsWith(".wav") || url.pathname.endsWith(".ogg")) return;
-
-// ✅ Audios: cache-first (si existe en caché, no toca servidor)
-if (url.pathname.endsWith(".mp3") || url.pathname.endsWith(".wav") || url.pathname.endsWith(".ogg")) {
-  event.respondWith((async () => {
-    const cache = await caches.open(AUDIO_CACHE);
-    const cached = await cache.match(req);
-    if (cached) return cached;
-
-    const res = await fetch(req);
-    if (res && res.ok) {
-      cache.put(req, res.clone());
-    }
-    return res;
-  })());
-  return;
-}
-
+  // 🚫 No cachear audios
+  if (url.pathname.endsWith(".mp3") || url.pathname.endsWith(".wav") || url.pathname.endsWith(".ogg")) return;
 
   const isHTML = req.headers.get("accept")?.includes("text/html");
 
