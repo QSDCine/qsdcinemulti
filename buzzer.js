@@ -1,0 +1,246 @@
+// buzzer.js
+import { runTransaction, doc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { db, roomRef, updateRoom } from "./firestore-utils.js";
+
+// 10s por defecto
+const BUZZ_WINDOW_MS = 10000;
+
+export function isBuzzer(room) {
+  return (room?.config?.modoRonda || "todos") === "buzzer";
+}
+
+export function ensureBuzzerRoundShape(roomId, room, playerId, nowMs) {
+  // Host-only idealmente, pero si no es host no hace nada porque solo parchea si falta.
+  const round = room.round || {};
+  if (!round.startAt || round.movieIndex == null) return;
+
+  const bz = round.buzzer || null;
+  const ok = bz && bz.roundStartAt === round.startAt;
+
+  if (ok) return;
+
+  // Parchea estructura buzzer en la ronda actual
+  return updateRoom(roomId, {
+    "round.buzzer": {
+      roundStartAt: round.startAt,
+      state: "open",          // open | locked | resolved
+      lockedBy: null,
+      lockedAt: null,
+      expiresAt: null
+    }
+  });
+}
+
+export function buzzerSyncUI(room, playerId, nowMs) {
+  const round = room.round || {};
+  const bz = round.buzzer || {};
+  const state = bz.state || "open";
+
+  const row = document.getElementById("buzzerRow");
+  const btnBuzz = document.getElementById("btnBuzz");
+  const txt = document.getElementById("buzzerText");
+
+  if (!row || !btnBuzz || !txt) return;
+
+  // mostrar UI buzzer solo en modo buzzer
+  row.style.display = "flex";
+
+  const iAmLocked = state === "locked" && bz.lockedBy === playerId;
+  const someoneLocked = state === "locked" && bz.lockedBy && bz.lockedBy !== playerId;
+
+  if (state === "resolved") {
+    btnBuzz.disabled = true;
+    txt.textContent = "Ronda resuelta ✅";
+    return;
+  }
+
+  if (iAmLocked) {
+    btnBuzz.disabled = true;
+    const left = Math.max(0, Math.ceil((bz.expiresAt - nowMs()) / 1000));
+    txt.textContent = `¡Tu turno! ⏱️ ${left}s`;
+    return;
+  }
+
+  if (someoneLocked) {
+    btnBuzz.disabled = true;
+    txt.textContent = "Otro jugador está respondiendo…";
+    return;
+  }
+
+  // open
+  btnBuzz.disabled = false;
+  txt.textContent = "Pulsa BUZZ para responder";
+}
+
+export async function buzzerTryBuzz(roomId, room, playerId, nowMs, getMaxAttemptsForMode) {
+  const ref = roomRef(roomId);
+
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists()) throw new Error("Sala no existe");
+
+    const r = snap.data();
+    const round = r.round || {};
+    if (!round.startAt || round.movieIndex == null) throw new Error("Ronda no lista");
+
+    const bz = round.buzzer || {};
+    if (bz.roundStartAt !== round.startAt) throw new Error("Buzzer no inicializado");
+
+    // solo buzz cuando está abierto
+    if (bz.state !== "open") return;
+
+    // no antes del startAt real (evita “prebuzz”)
+    if (nowMs() < round.startAt) return;
+
+    // límites de intentos por jugador en extremo/locura
+    const mode = r.config?.modoJuego || "normal";
+    const max = getMaxAttemptsForMode(mode);
+    if (max !== Infinity) {
+      const used = round.attemptsUsed?.[playerId] ?? 0;
+      if (used >= max) return; // sin intentos
+    }
+
+    const now = nowMs();
+    tx.update(ref, {
+      "round.buzzer": {
+        roundStartAt: round.startAt,
+        state: "locked",
+        lockedBy: playerId,
+        lockedAt: now,
+        expiresAt: now + BUZZ_WINDOW_MS
+      }
+    });
+  });
+}
+
+export async function buzzerReleaseIfExpired(roomId, room, playerId, nowMs) {
+  const round = room.round || {};
+  const bz = round.buzzer || {};
+  if (bz.state !== "locked") return;
+  if (!bz.expiresAt) return;
+  if (nowMs() <= bz.expiresAt) return;
+
+  // El que expiró pierde racha (según tu regla) y se reabre
+  const failedPid = bz.lockedBy;
+  if (!failedPid) return;
+
+  await updateRoom(roomId, {
+    [`players.${failedPid}.racha`]: 0,
+    "round.buzzer.state": "open",
+    "round.buzzer.lockedBy": null,
+    "round.buzzer.lockedAt": null,
+    "round.buzzer.expiresAt": null
+  });
+}
+
+export function buzzerApplyInputLock(room, playerId) {
+  // Solo el que tiene el lock puede escribir y responder
+  const round = room.round || {};
+  const bz = round.buzzer || {};
+  const lockedBy = bz.lockedBy;
+
+  const input = document.getElementById("answerInput");
+  const btnAnswer = document.getElementById("btnAnswer");
+  const btnSurrender = document.getElementById("btnSurrender");
+
+  const state = bz.state || "open";
+  const iAmLocked = state === "locked" && lockedBy === playerId;
+
+  if (input) input.disabled = !iAmLocked;
+  if (btnAnswer) btnAnswer.disabled = !iAmLocked;
+  if (btnSurrender) btnSurrender.disabled = !iAmLocked;
+}
+
+export async function buzzerSubmitAnswer({
+  roomId,
+  room,
+  playerId,
+  nowMs,
+  isCorrectAnswer,
+  getPrimaryTitle,
+  getMode,
+  getMaxAttemptsForMode,
+  hintsUsedThisRound
+}, opts = {}) {
+  const surrendered = !!opts.surrendered;
+
+  const round = room.round || {};
+  const bz = round.buzzer || {};
+  if (bz.state !== "locked" || bz.lockedBy !== playerId) return;
+
+  // si expiró, no permitimos (se reabre en sync)
+  if (bz.expiresAt && nowMs() > bz.expiresAt) return;
+
+  const input = document.getElementById("answerInput");
+  const raw = input ? String(input.value || "").trim() : "";
+  const correct = surrendered ? false : isCorrectAnswer(raw, round.movieIndex);
+
+  // consume intentos en extremo/locura cuando falla
+  const mode = getMode(room);
+  const max = getMaxAttemptsForMode(mode);
+  const used = round.attemptsUsed?.[playerId] ?? 0;
+
+  const updates = {};
+
+  if (correct) {
+    // ✅ Resuelto: rellenamos answers para TODOS (noAnswer para el resto)
+    const all = Object.keys(room.players || {});
+    const answers = {};
+
+    for (const pid of all) {
+      if (pid === playerId) {
+        answers[pid] = {
+          raw,
+          correct: true,
+          surrendered: false,
+          ts: nowMs(),
+          roundStartAt: round.startAt
+        };
+      } else {
+        answers[pid] = {
+          raw: "",
+          correct: false,
+          surrendered: false,
+          noAnswer: true,
+          ts: nowMs(),
+          roundStartAt: round.startAt
+        };
+      }
+    }
+
+    updates["round.answers"] = answers;
+    updates["round.revealUntil"] = nowMs() + 1200;
+
+    // cerramos buzzer
+    updates["round.buzzer.state"] = "resolved";
+    updates["round.buzzer.lockedBy"] = playerId;
+
+    await updateRoom(roomId, updates);
+    return;
+  }
+
+  // ❌ Fallo o rendición:
+  // corta racha SIEMPRE al que buzzó (tu regla)
+  updates[`players.${playerId}.racha`] = 0;
+
+  // en extremo/locura consumimos intento
+  if (max !== Infinity && !surrendered) {
+    updates[`round.attemptsUsed.${playerId}`] = used + 1;
+  }
+
+  // mensaje UI local (no obligatorio, pero ayuda)
+  const st = document.getElementById("answerStatus");
+  if (st) {
+    const title = getPrimaryTitle(round.movieIndex);
+    if (surrendered) st.textContent = `Te rendiste 🏳️ (buzzer)`;
+    else st.textContent = `Incorrecto ❌ (buzzer)`;
+  }
+
+  // reabrimos buzzer para que otros puedan buzzear
+  updates["round.buzzer.state"] = "open";
+  updates["round.buzzer.lockedBy"] = null;
+  updates["round.buzzer.lockedAt"] = null;
+  updates["round.buzzer.expiresAt"] = null;
+
+  await updateRoom(roomId, updates);
+}

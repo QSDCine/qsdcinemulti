@@ -1,63 +1,67 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="es">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Partida | QSDC Multi</title>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Partida | QSDC Multi</title>
 
-  <link rel="stylesheet" href="style.css" />
-  <link rel="manifest" href="manifest.json" />
-  <link rel="icon" type="image/png" href="icon-192.png" />
-</head>
+    <link rel="stylesheet" href="style.css" />
+    <link rel="manifest" href="manifest.json" />
+    <link rel="icon" type="image/png" href="icon-192.png" />
+  </head>
 
-<body>
-  <div id="app">
-    <div id="quiz-container" class="card">
+  <body>
+    <div id="app">
+      <div id="quiz-container" class="card">
+        <!-- INFO ÚTIL PARA JUGADOR -->
+        <p><strong>Ronda:</strong> <span id="roundText">-</span></p>
 
-      <!-- INFO ÚTIL PARA JUGADOR -->
-      <p><strong>Ronda:</strong> <span id="roundText">-</span></p>
+        <p id="countdownText" style="font-size: 2rem; margin: 0.6rem 0">-</p>
+        <p id="statusText" class="hint">Esperando sincronización...</p>
 
-      <p id="countdownText" style="font-size: 2rem; margin: 0.6rem 0;">-</p>
-      <p id="statusText" class="hint">Esperando sincronización...</p>
+        <p id="descriptionText" style="margin: 0.8rem 0"></p>
 
-      <p id="descriptionText" style="margin: 0.8rem 0;"></p>
+        <!-- AUDIO -->
+        <audio id="audio" controls controlsList="nodownload"></audio>
 
-      <!-- AUDIO -->
-      <audio id="audio" controls controlsList="nodownload"></audio>
+        <!-- PISTAS -->
+        <div id="hintsContainer"></div>
+        <!-- BUZZER (solo se muestra si modoRonda=buzzer) -->
+        <div id="buzzerRow" class="row" style="display: none">
+          <button id="btnBuzz" class="primary">BUZZ!</button>
+          <span id="buzzerText" class="hint"></span>
+        </div>
 
-      <!-- PISTAS -->
-      <div id="hintsContainer"></div>
+        <!-- RESPUESTA -->
+        <div class="answer-row">
+          <input id="answerInput" type="text" placeholder="Escribe tu respuesta..." autocomplete="off" />
+          <button id="btnAnswer" class="primary">Responder</button>
+        </div>
 
-      <!-- RESPUESTA -->
-      <div class="answer-row">
-        <input id="answerInput" type="text" placeholder="Escribe tu respuesta..." autocomplete="off" />
-        <button id="btnAnswer" class="primary">Responder</button>
+        <div class="row">
+          <button id="btnSurrender" type="button">Rendirse</button>
+        </div>
+
+        <p id="answerStatus" class="hint" style="margin-top: 8px">Aún no has respondido.</p>
+        <p id="gameError" class="error" style="display: none"></p>
+
+        <hr style="margin: 14px 0; opacity: 0.3" />
+
+        <!-- MARCADOR (se queda) -->
+        <h2 style="margin: 12px 0 6px">Marcador</h2>
+        <ul id="scoreList"></ul>
       </div>
-
-      <div class="row">
-        <button id="btnSurrender" type="button">Rendirse</button>
-      </div>
-
-      <p id="answerStatus" class="hint" style="margin-top: 8px;">Aún no has respondido.</p>
-      <p id="gameError" class="error" style="display:none;"></p>
-
-      <hr style="margin: 14px 0; opacity: 0.3;" />
-
-      <!-- MARCADOR (se queda) -->
-      <h2 style="margin: 12px 0 6px;">Marcador</h2>
-      <ul id="scoreList"></ul>
-
     </div>
-  </div>
 
-  <script type="module" src="game.js"></script>
+    <script type="module" src="game.js"></script>
 
-  <script>
-    if ("serviceWorker" in navigator) {
-      const basePath = window.location.pathname.split("/").slice(0, 2).join("/");
-      navigator.serviceWorker.register(`${basePath}/service-worker.js`)
-        .then(() => console.log("Service Worker registrado"));
-    }
-  </script>
-</body>
+    <script>
+      if ("serviceWorker" in navigator) {
+        const basePath = window.location.pathname.split("/").slice(0, 2).join("/");
+        navigator.serviceWorker
+          .register(`${basePath}/service-worker.js`)
+          .then(() => console.log("Service Worker registrado"));
+      }
+    </script>
+  </body>
 </html>

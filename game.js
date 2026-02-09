@@ -1,5 +1,15 @@
 import { listenRoom, updateRoom, getServerClockOffsetMs } from "./firestore-utils.js";
 import { movies } from "./movies.js";
+import {
+  isBuzzer,
+  ensureBuzzerRoundShape,
+  buzzerSyncUI,
+  buzzerTryBuzz,
+  buzzerReleaseIfExpired,
+  buzzerApplyInputLock,
+  buzzerSubmitAnswer
+} from "./buzzer.js";
+
 
 // ============================
 // Helpers DOM
@@ -603,6 +613,14 @@ const now = nowMs();
 
   for (const [pid, pdata] of Object.entries(playersObj)) {
     const ans = answers[pid] || {};
+    // ✅ Buzzer: si el jugador no respondió (noAnswer), no tocamos puntos ni racha
+if ((room.config?.modoRonda === "buzzer") && ans.noAnswer) {
+  updates[`players.${pid}.puntos`] = pdata.puntos ?? 0;
+  updates[`players.${pid}.racha`] = pdata.racha ?? 0;
+  updates[`players.${pid}.mejorRacha`] = pdata.mejorRacha ?? 0;
+  continue;
+}
+
     const correct = !!ans.correct;
     const surrendered = !!ans.surrendered;
 
@@ -800,6 +818,17 @@ function renderRoom(room) {
 
   if (hasRound) {
     applyModeUI(room);
+// ✅ Buzzer: asegurar estructura por ronda y sincronizar UI
+if (isBuzzer(room)) {
+  ensureBuzzerRoundShape(roomId, room, playerId, nowMs)?.catch?.(() => {});
+  buzzerReleaseIfExpired(roomId, room, playerId, nowMs).catch(() => {});
+  buzzerSyncUI(room, playerId, nowMs);
+  buzzerApplyInputLock(room, playerId);
+} else {
+  // modo todos: tu comportamiento normal
+  const br = document.getElementById("buzzerRow");
+  if (br) br.style.display = "none";
+}
 
     const url = getAudioUrl(round.movieIndex);
     scheduleSynchronizedPlay(round.startAt, url);
@@ -809,13 +838,15 @@ function renderRoom(room) {
     setStatus("Esperando sincronización...");
   }
 
-syncAnswerUI(room);
+// syncAnswerUI(room); Reset antes de buzzer
+if (!isBuzzer(room)) syncAnswerUI(room);
+
 
 hostScoreAndAdvance(room).catch((e) => {
   // IMPORTANTÍSIMO: si falla el avance, queremos verlo
   if (room.hostId === playerId) {
     console.error("[QSDC-MULTI] hostScoreAndAdvance failed:", e);
-    setError("HOST: No se pudo avanzar la ronda. Mira consola / reglas Firestore.");
+    setError("HOST: No se pudo avanzar la ronda.");
   }
 });
 
@@ -824,30 +855,78 @@ hostScoreAndAdvance(room).catch((e) => {
 // ============================
 // Events
 // ============================
+
+// 1) BUZZ!
+const btnBuzz = $("btnBuzz");
+if (btnBuzz) {
+  btnBuzz.addEventListener("click", async () => {
+    if (!window.__currentRoom) return;
+    try {
+      await buzzerTryBuzz(
+        roomId,
+        window.__currentRoom,
+        playerId,
+        nowMs,
+        getMaxAttemptsForMode
+      );
+    } catch (e) {
+      // silencioso (si llega tarde o ya está bloqueado, no pasa nada)
+    }
+  });
+}
+
+// helper: enviar respuesta según modoRonda
+async function sendAnswerUnified(opts = {}) {
+  const room = window.__currentRoom;
+  if (!room) return;
+
+  if (isBuzzer(room)) {
+    await buzzerSubmitAnswer(
+      {
+        roomId,
+        room,
+        playerId,
+        nowMs,
+        isCorrectAnswer,
+        getPrimaryTitle,
+        getMode,
+        getMaxAttemptsForMode,
+        hintsUsedThisRound
+      },
+      opts
+    );
+  } else {
+    await submitAnswer(room, opts);
+  }
+}
+
+// 2) Botón responder
 const btnAnswer = $("btnAnswer");
 if (btnAnswer) {
   btnAnswer.addEventListener("click", async () => {
     if (!window.__currentRoom) return;
     try {
-      await submitAnswer(window.__currentRoom);
+      await sendAnswerUnified(); // sin opts
     } catch (e) {
       setError(e?.message || "No se pudo enviar la respuesta.");
     }
   });
 }
 
+// 3) Botón rendirse
 const btnSurrender = $("btnSurrender");
 if (btnSurrender) {
   btnSurrender.addEventListener("click", async () => {
     if (!window.__currentRoom) return;
     try {
-      await submitAnswer(window.__currentRoom, { surrendered: true });
+      await sendAnswerUnified({ surrendered: true });
     } catch (e) {
       setError(e?.message || "No se pudo rendir.");
     }
   });
 }
 
+// 4) Enter en el input
 const answerInput = $("answerInput");
 if (answerInput) {
   answerInput.addEventListener("keydown", async (e) => {
@@ -855,7 +934,7 @@ if (answerInput) {
     if (!window.__currentRoom) return;
     try {
       // ✅ permite enviar vacío (sirve para “pasar rápido” en locura)
-      await submitAnswer(window.__currentRoom);
+      await sendAnswerUnified();
     } catch (err) {
       setError(err?.message || "No se pudo enviar la respuesta.");
     }
@@ -921,4 +1000,6 @@ window.addEventListener("beforeunload", () => {
   hostWatchdog = null;
   if (unsub) unsub();
 });
+
+
 

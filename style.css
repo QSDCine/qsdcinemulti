@@ -412,3 +412,12 @@ body.dark-mode ol#resultsList li {
 #btnSurrender:hover {
   opacity: 1;
 }
+#buzzerRow {
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+}
+
+#btnBuzz {
+  min-width: 150px;
+}
