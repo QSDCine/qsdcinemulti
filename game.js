@@ -7,7 +7,8 @@ import {
   buzzerTryBuzz,
   buzzerReleaseIfExpired,
   buzzerApplyInputLock,
-  buzzerSubmitAnswer
+  buzzerSubmitAnswer,
+  buzzerStartLocalTicker
 } from "./buzzer.js";
 
 
@@ -600,8 +601,23 @@ const now = nowMs();
   const updates = {};
 
   // Bonus contrarreloj: el más rápido correcto +3, segundo correcto +1, aunque ahora mismo comentado solo
-  let speedBonus = {};
-  if (mode === "contrarreloj") {
+// Bonus contrarreloj:
+// - Todos responden: el más rápido correcto +3
+// - Buzzer: +3 SOLO si acierta el que hizo el primer BUZZ de la ronda
+let speedBonus = {};
+if (mode === "contrarreloj") {
+  const isBuzzerMode = room.config?.modoRonda === "buzzer";
+
+  if (isBuzzerMode) {
+    const firstBy = round.buzzerFirstBy;
+    const okRound = round.buzzerFirstStartAt === round.startAt;
+
+    // Solo bonificamos si el "first buzz" de esta ronda existe y acertó
+    if (okRound && firstBy && answers?.[firstBy]?.correct) {
+      speedBonus[firstBy] = 3;
+    }
+  } else {
+    // Todos responden (tu lógica original)
     const corrects = Object.entries(answers)
       .filter(([, a]) => a && a.correct)
       .sort((a, b) => (a[1].ts ?? 0) - (b[1].ts ?? 0))
@@ -610,6 +626,8 @@ const now = nowMs();
     if (corrects[0]) speedBonus[corrects[0]] = 3;
     //if (corrects[1]) speedBonus[corrects[1]] = 1;
   }
+}
+
 
   for (const [pid, pdata] of Object.entries(playersObj)) {
     const ans = answers[pid] || {};
@@ -822,8 +840,16 @@ function renderRoom(room) {
 if (isBuzzer(room)) {
   ensureBuzzerRoundShape(roomId, room, playerId, nowMs)?.catch?.(() => {});
   buzzerReleaseIfExpired(roomId, room, playerId, nowMs).catch(() => {});
-  buzzerSyncUI(room, playerId, nowMs);
+  buzzerSyncUI(room, playerId, nowMs, getPrimaryTitle);
   buzzerApplyInputLock(room, playerId);
+buzzerStartLocalTicker({
+  roomId,
+  getRoom: () => window.__currentRoom,
+  playerId,
+  nowMs,
+  getPrimaryTitle
+});
+
 } else {
   // modo todos: tu comportamiento normal
   const br = document.getElementById("buzzerRow");

@@ -5,6 +5,56 @@ import { db, roomRef, updateRoom } from "./firestore-utils.js";
 // 10s por defecto
 const BUZZ_WINDOW_MS = 10000;
 
+let __buzzerIntervalStarted = false;
+
+export function buzzerStartLocalTicker({
+  roomId,
+  getRoom,
+  playerId,
+  nowMs,
+  getPrimaryTitle
+}) {
+  if (__buzzerIntervalStarted) return;
+  __buzzerIntervalStarted = true;
+
+  setInterval(async () => {
+    const room = getRoom();
+    if (!room) return;
+
+    const round = room.round || {};
+    const bz = round.buzzer || {};
+    if (bz.state !== "locked") return;
+
+    // Si yo soy el bloqueado, actualizo la cuenta atrás y libero si expira
+    if (bz.lockedBy !== playerId) return;
+
+    const leftMs = (bz.expiresAt ?? 0) - nowMs();
+    const left = Math.max(0, Math.ceil(leftMs / 1000));
+
+    const txt = document.getElementById("buzzerText");
+    if (txt) txt.textContent = `¡Tu turno! ⏱️ ${left}s`;
+
+    if (leftMs <= 0) {
+      const st = document.getElementById("answerStatus");
+      const title = getPrimaryTitle(round.movieIndex);
+      if (st) st.textContent = `Tiempo agotado ⏱️ Era: ${title}`;
+
+      // liberamos buzzer y cortamos racha
+      try {
+        await updateRoom(roomId, {
+          [`players.${playerId}.racha`]: 0,
+          "round.buzzer.state": "open",
+          "round.buzzer.lockedBy": null,
+          "round.buzzer.lockedAt": null,
+          "round.buzzer.expiresAt": null
+        });
+      } catch {}
+    }
+  }, 250);
+}
+
+
+
 export function isBuzzer(room) {
   return (room?.config?.modoRonda || "todos") === "buzzer";
 }
@@ -31,7 +81,7 @@ export function ensureBuzzerRoundShape(roomId, room, playerId, nowMs) {
   });
 }
 
-export function buzzerSyncUI(room, playerId, nowMs) {
+export function buzzerSyncUI(room, playerId, nowMs, getPrimaryTitle) {
   const round = room.round || {};
   const bz = round.buzzer || {};
   const state = bz.state || "open";
@@ -50,7 +100,7 @@ export function buzzerSyncUI(room, playerId, nowMs) {
 
   if (state === "resolved") {
     btnBuzz.disabled = true;
-    txt.textContent = "Ronda resuelta ✅";
+    txt.textContent = "Ronda resuelta ✅ Era: ${title}";
     return;
   }
 
@@ -100,16 +150,29 @@ export async function buzzerTryBuzz(roomId, room, playerId, nowMs, getMaxAttempt
       if (used >= max) return; // sin intentos
     }
 
-    const now = nowMs();
-    tx.update(ref, {
-      "round.buzzer": {
-        roundStartAt: round.startAt,
-        state: "locked",
-        lockedBy: playerId,
-        lockedAt: now,
-        expiresAt: now + BUZZ_WINDOW_MS
-      }
-    });
+   const now = nowMs();
+
+// ✅ Guardar el PRIMER buzz de la ronda (solo una vez por ronda)
+const firstStartAt = round.buzzerFirstStartAt;
+const shouldSetFirst = firstStartAt !== round.startAt;
+
+const firstPatch = shouldSetFirst ? {
+  "round.buzzerFirstStartAt": round.startAt,
+  "round.buzzerFirstBy": playerId,
+  "round.buzzerFirstAt": now
+} : {};
+
+tx.update(ref, {
+  ...firstPatch,
+  "round.buzzer": {
+    roundStartAt: round.startAt,
+    state: "locked",
+    lockedBy: playerId,
+    lockedAt: now,
+    expiresAt: now + BUZZ_WINDOW_MS
+  }
+});
+
   });
 }
 
@@ -232,8 +295,8 @@ export async function buzzerSubmitAnswer({
   const st = document.getElementById("answerStatus");
   if (st) {
     const title = getPrimaryTitle(round.movieIndex);
-    if (surrendered) st.textContent = `Te rendiste 🏳️ (buzzer)`;
-    else st.textContent = `Incorrecto ❌ (buzzer)`;
+    if (surrendered) st.textContent = `Te rendiste 🏳️ Era: ${title}`;
+    else st.textContent = `Incorrecto ❌ Era: ${title}`;
   }
 
   // reabrimos buzzer para que otros puedan buzzear
