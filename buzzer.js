@@ -1,5 +1,5 @@
 // buzzer.js
-import { runTransaction, doc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { runTransaction, doc, getDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { db, roomRef, updateRoom } from "./firestore-utils.js";
 
 // 10s por defecto
@@ -26,36 +26,42 @@ async function maybeAutoResolveIfExhausted(roomId, room, nowMs) {
   // Si ya está resuelta, no hacer nada
   if (round.buzzer?.state === "resolved") return;
 
-  const usedMap = round.attemptsUsed || {};
-  const noOneLeft = players.every(pid => (usedMap[pid] ?? 0) >= max);
-  if (!noOneLeft) return;
-const someoneStillCan = players.some(pid => (usedMap[pid] ?? 0) < max);
-if (someoneStillCan) return;
+ const usedMap = round.attemptsUsed || {};
+const answersMap = round.answers || {};
 
+// ✅ Auto-resolve si: nadie tiene intentos disponibles O ya está finalizado (rendición) en esta ronda
+const noOneLeft = players.every(pid => {
+  const used = usedMap[pid] ?? 0;
+  const finalAns = answersMap[pid] && answersMap[pid].roundStartAt === startAt;
+  return used >= max || finalAns;
+});
 
-  const now = nowMs();
+if (!noOneLeft) return;
 
-  // ✅ Rellenamos answers para todos para desbloquear allPlayersAnswered()
-  const answers = {};
-  for (const pid of players) {
-    answers[pid] = {
-      raw: "",
-      correct: false,
-      surrendered: false,
-      noAnswer: true,          // IMPORTANTE: hostScoreAndAdvance no tocará puntos/racha
-      ts: now,
-      roundStartAt: startAt
-    };
-  }
+const now = nowMs();
 
-  await updateRoom(roomId, {
-    "round.answers": answers,
-    "round.revealUntil": now + 1200,
-    "round.buzzer.state": "resolved",
-    "round.buzzer.lockedBy": null,
-    "round.buzzer.lockedAt": null,
-    "round.buzzer.expiresAt": null
-  });
+// ✅ Rellenamos answers para todos para desbloquear allPlayersAnswered()
+const finalAnswers = {};
+for (const pid of players) {
+  finalAnswers[pid] = {
+    raw: "",
+    correct: false,
+    surrendered: false,
+    noAnswer: true,
+    ts: now,
+    roundStartAt: startAt
+  };
+}
+
+await updateRoom(roomId, {
+  "round.answers": finalAnswers,
+  "round.revealUntil": now + 1200,
+  "round.buzzer.state": "resolved",
+  "round.buzzer.lockedBy": null,
+  "round.buzzer.lockedAt": null,
+  "round.buzzer.expiresAt": null
+});
+
 }
 
 
@@ -475,10 +481,12 @@ if (max !== Infinity) {
 
   await updateRoom(roomId, updates);
 // ✅ Si es extremo/locura, puede que ya no quede nadie con intentos -> auto-resolver
+// ✅ Puede que ya no quede nadie con intentos o que todos estén “finalizados” (rendidos)
 try {
-  // Ojo: room está “viejo”; recargará solo al siguiente snapshot.
-  // Pero como attemptsUsed se ha actualizado, en el siguiente render esto se disparará bien.
-  await maybeAutoResolveIfExhausted(roomId, room, nowMs);
+  const snap = await getDoc(roomRef(roomId));
+  if (snap.exists()) {
+    await maybeAutoResolveIfExhausted(roomId, snap.data(), nowMs);
+  }
 } catch {}
 
 }
