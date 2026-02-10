@@ -40,15 +40,33 @@ export function buzzerStartLocalTicker({
       if (st) st.textContent = `Tiempo agotado ⏱️ Era: ${title}`;
 
       // liberamos buzzer y cortamos racha
-      try {
-        await updateRoom(roomId, {
-          [`players.${playerId}.racha`]: 0,
-          "round.buzzer.state": "open",
-          "round.buzzer.lockedBy": null,
-          "round.buzzer.lockedAt": null,
-          "round.buzzer.expiresAt": null
-        });
-      } catch {}
+try {
+  const mode = room?.config?.modoJuego || "normal";
+  const used = round.attemptsUsed?.[playerId] ?? 0;
+
+  // penalización por timeout según modo
+  let delta = 0;
+  if (mode === "extremo") delta = -3;
+  else if (mode === "locura") delta = -20;
+
+  const prevPts = room.players?.[playerId]?.puntos ?? 0;
+
+  const patch = {
+    [`players.${playerId}.racha`]: 0,
+    ...(delta ? { [`players.${playerId}.puntos`]: prevPts + delta } : {}),
+    "round.buzzer.state": "open",
+    "round.buzzer.lockedBy": null,
+    "round.buzzer.lockedAt": null,
+    "round.buzzer.expiresAt": null
+  };
+
+  // consumir intento en extremo/locura
+  if (mode === "extremo" || mode === "locura") {
+    patch[`round.attemptsUsed.${playerId}`] = used + 1;
+  }
+
+  await updateRoom(roomId, patch);
+} catch {}
     }
   }, 250);
 }
@@ -98,11 +116,22 @@ export function buzzerSyncUI(room, playerId, nowMs, getPrimaryTitle) {
   const iAmLocked = state === "locked" && bz.lockedBy === playerId;
   const someoneLocked = state === "locked" && bz.lockedBy && bz.lockedBy !== playerId;
 
-  if (state === "resolved") {
-    btnBuzz.disabled = true;
-    txt.textContent = "Ronda resuelta ✅ Era: ${title}";
-    return;
+if (state === "resolved") {
+  btnBuzz.disabled = true;
+
+  const title = getPrimaryTitle(round.movieIndex);
+  const st = document.getElementById("answerStatus");
+
+  if (bz.lockedBy === playerId) {
+    txt.textContent = "¡Correcto! ✅";
+    if (st) st.textContent = `¡Correcto! ✅ Era: ${title}`;
+  } else {
+    txt.textContent = "Ronda resuelta ✅";
+    if (st) st.textContent = `Era: ${title}`;
   }
+
+  return;
+}
 
   if (iAmLocked) {
     btnBuzz.disabled = true;
@@ -117,9 +146,19 @@ export function buzzerSyncUI(room, playerId, nowMs, getPrimaryTitle) {
     return;
   }
 
-  // open
+  // open (aquí ya toca controlar intentos en extremo/locura)
+const mode = room?.config?.modoJuego || "normal";
+const used = round.attemptsUsed?.[playerId] ?? 0;
+const max = (mode === "locura") ? 1 : (mode === "extremo") ? 3 : Infinity;
+
+if (used >= max) {
+  btnBuzz.disabled = true;
+  txt.textContent = "Sin intentos disponibles.";
+} else {
   btnBuzz.disabled = false;
   txt.textContent = "Pulsa BUZZ para responder";
+}
+
 }
 
 export async function buzzerTryBuzz(roomId, room, playerId, nowMs, getMaxAttemptsForMode) {
@@ -285,11 +324,27 @@ export async function buzzerSubmitAnswer({
   // ❌ Fallo o rendición:
   // corta racha SIEMPRE al que buzzó (tu regla)
   updates[`players.${playerId}.racha`] = 0;
+// Penalización de puntos en buzzer (solo aquí, porque la ronda NO termina al fallar)
+const prevPts = room.players?.[playerId]?.puntos ?? 0;
+let delta = 0;
+
+if (mode === "extremo") {
+  delta = surrendered ? -5 : -3;
+} else if (mode === "locura") {
+  delta = -20;
+} else {
+  // normal / contrarreloj
+  if (surrendered) delta = -3;
+  else delta = 0;
+}
+
+if (delta) updates[`players.${playerId}.puntos`] = prevPts + delta;
 
   // en extremo/locura consumimos intento
-  if (max !== Infinity && !surrendered) {
-    updates[`round.attemptsUsed.${playerId}`] = used + 1;
-  }
+if (max !== Infinity) {
+  updates[`round.attemptsUsed.${playerId}`] = used + 1;
+}
+
 
   // mensaje UI local (no obligatorio, pero ayuda)
   const st = document.getElementById("answerStatus");
