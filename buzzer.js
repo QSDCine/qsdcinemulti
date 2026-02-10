@@ -7,6 +7,55 @@ const BUZZ_WINDOW_MS = 10000;
 
 let __buzzerIntervalStarted = false;
 
+function maxAttemptsForMode(mode) {
+  if (mode === "locura") return 1;
+  if (mode === "extremo") return 3;
+  return Infinity;
+}
+
+async function maybeAutoResolveIfExhausted(roomId, room, nowMs) {
+  const mode = room?.config?.modoJuego || "normal";
+  const max = maxAttemptsForMode(mode);
+  if (max === Infinity) return;
+
+  const round = room.round || {};
+  const startAt = round.startAt;
+  const players = Object.keys(room.players || {});
+  if (!startAt || players.length === 0) return;
+
+  // Si ya está resuelta, no hacer nada
+  if (round.buzzer?.state === "resolved") return;
+
+  const usedMap = round.attemptsUsed || {};
+  const noOneLeft = players.every(pid => (usedMap[pid] ?? 0) >= max);
+  if (!noOneLeft) return;
+
+  const now = nowMs();
+
+  // ✅ Rellenamos answers para todos para desbloquear allPlayersAnswered()
+  const answers = {};
+  for (const pid of players) {
+    answers[pid] = {
+      raw: "",
+      correct: false,
+      surrendered: false,
+      noAnswer: true,          // IMPORTANTE: hostScoreAndAdvance no tocará puntos/racha
+      ts: now,
+      roundStartAt: startAt
+    };
+  }
+
+  await updateRoom(roomId, {
+    "round.answers": answers,
+    "round.revealUntil": now + 1200,
+    "round.buzzer.state": "resolved",
+    "round.buzzer.lockedBy": null,
+    "round.buzzer.lockedAt": null,
+    "round.buzzer.expiresAt": null
+  });
+}
+
+
 export function buzzerStartLocalTicker({
   roomId,
   getRoom,
@@ -66,6 +115,16 @@ try {
   }
 
   await updateRoom(roomId, patch);
+try {
+  // Simula en memoria el intento consumido para que el helper pueda decidir ya
+  room.round = room.round || {};
+  room.round.attemptsUsed = room.round.attemptsUsed || {};
+  if (mode === "extremo" || mode === "locura") {
+    room.round.attemptsUsed[playerId] = used + 1;
+  }
+  await maybeAutoResolveIfExhausted(roomId, room, nowMs);
+} catch {}
+
 } catch {}
     }
   }, 250);
@@ -348,17 +407,45 @@ if (max !== Infinity) {
 
   // mensaje UI local (no obligatorio, pero ayuda)
   const st = document.getElementById("answerStatus");
-  if (st) {
-    const title = getPrimaryTitle(round.movieIndex);
-    if (surrendered) st.textContent = `Te rendiste 🏳️ Era: ${title}`;
-    else st.textContent = `Incorrecto ❌ Era: ${title}`;
-  }
+const title = getPrimaryTitle(round.movieIndex);
+
+if (mode === "extremo" || mode === "locura") {
+  const maxA = (mode === "locura") ? 1 : 3;
+  const usedAfter = (round.attemptsUsed?.[playerId] ?? 0) + 1; // porque este fallo consume
+  const remaining = Math.max(0, maxA - usedAfter);
+
+  if (surrendered) st.textContent = `Te rendiste 🏳️ Era: ${title}.`;
+  else st.textContent = `Incorrecto ❌ Te quedan ${remaining} intento(s).`;
+} else {
+  if (surrendered) st.textContent = `Te rendiste 🏳️ Era: ${title}`;
+  else st.textContent = `Incorrecto ❌ Era: ${title}`;
+}
+
 
   // reabrimos buzzer para que otros puedan buzzear
   updates["round.buzzer.state"] = "open";
   updates["round.buzzer.lockedBy"] = null;
   updates["round.buzzer.lockedAt"] = null;
   updates["round.buzzer.expiresAt"] = null;
+// “simula” el nuevo attemptsUsed en memoria para el helper
+if (max !== Infinity) {
+  room.round = room.round || {};
+  room.round.attemptsUsed = room.round.attemptsUsed || {};
+  room.round.attemptsUsed[playerId] = (room.round.attemptsUsed[playerId] ?? 0) + 1;
+}
+// “simula” el nuevo attemptsUsed en memoria para el helper
+if (max !== Infinity) {
+  room.round = room.round || {};
+  room.round.attemptsUsed = room.round.attemptsUsed || {};
+  room.round.attemptsUsed[playerId] = (room.round.attemptsUsed[playerId] ?? 0) + 1;
+}
 
   await updateRoom(roomId, updates);
+// ✅ Si es extremo/locura, puede que ya no quede nadie con intentos -> auto-resolver
+try {
+  // Ojo: room está “viejo”; recargará solo al siguiente snapshot.
+  // Pero como attemptsUsed se ha actualizado, en el siguiente render esto se disparará bien.
+  await maybeAutoResolveIfExhausted(roomId, room, nowMs);
+} catch {}
+
 }
