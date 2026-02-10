@@ -520,8 +520,10 @@ function syncAnswerUI(room) {
     return;
   }
 
-  const myAns = round.answers?.[playerId];
-  const already = !!myAns && myAns.roundStartAt === round.startAt;
+const myAns = round.answers?.[playerId];
+const okStart = myAns && myAns.roundStartAt === round.startAt;
+const already = !!okStart;
+
 
   // pendiente local
   if (!already && pendingAnswerForStartAt === round.startAt) {
@@ -839,7 +841,7 @@ function renderRoom(room) {
 // ✅ Buzzer: asegurar estructura por ronda y sincronizar UI
 if (isBuzzer(room)) {
   ensureBuzzerRoundShape(roomId, room, playerId, nowMs)?.catch?.(() => {});
-  buzzerReleaseIfExpired(roomId, room, playerId, nowMs).catch(() => {});
+  // buzzerReleaseIfExpired(roomId, room, playerId, nowMs).catch(() => {});
   buzzerSyncUI(room, playerId, nowMs, getPrimaryTitle);
   buzzerApplyInputLock(room, playerId);
 buzzerStartLocalTicker({

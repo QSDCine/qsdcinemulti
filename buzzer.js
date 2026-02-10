@@ -29,6 +29,9 @@ async function maybeAutoResolveIfExhausted(roomId, room, nowMs) {
   const usedMap = round.attemptsUsed || {};
   const noOneLeft = players.every(pid => (usedMap[pid] ?? 0) >= max);
   if (!noOneLeft) return;
+const someoneStillCan = players.some(pid => (usedMap[pid] ?? 0) < max);
+if (someoneStillCan) return;
+
 
   const now = nowMs();
 
@@ -86,7 +89,17 @@ export function buzzerStartLocalTicker({
     if (leftMs <= 0) {
       const st = document.getElementById("answerStatus");
       const title = getPrimaryTitle(round.movieIndex);
-      if (st) st.textContent = `Tiempo agotado ⏱️ Era: ${title}`;
+      const mode = room?.config?.modoJuego || "normal";
+
+let extra = "";
+if (mode === "extremo") {
+  const used = (round.attemptsUsed?.[playerId] ?? 0) + 1; // este timeout consume
+  const remaining = Math.max(0, 3 - used);
+  extra = ` Te quedan ${remaining} intento(s).`;
+}
+
+if (st) st.textContent = `Tiempo agotado ⏱️ ${extra}`;
+
 
       // liberamos buzzer y cortamos racha
 try {
@@ -209,6 +222,18 @@ if (state === "resolved") {
 const mode = room?.config?.modoJuego || "normal";
 const used = round.attemptsUsed?.[playerId] ?? 0;
 const max = (mode === "locura") ? 1 : (mode === "extremo") ? 3 : Infinity;
+// Si ya tengo respuesta FINAL en esta ronda (p.ej. me rendí), no puedo volver a buzzear
+const myFinal = round.answers?.[playerId];
+const alreadyFinal = !!myFinal && myFinal.roundStartAt === round.startAt;
+
+if (alreadyFinal) {
+  btnBuzz.disabled = true;
+  const title = getPrimaryTitle(round.movieIndex);
+  txt.textContent = myFinal.surrendered ?
+     `Te rendiste 🏳️ Era: ${title}`
+    : "Ya has respondido.";
+  return;
+}
 
 if (used >= max) {
   btnBuzz.disabled = true;
@@ -239,6 +264,10 @@ export async function buzzerTryBuzz(roomId, room, playerId, nowMs, getMaxAttempt
 
     // no antes del startAt real (evita “prebuzz”)
     if (nowMs() < round.startAt) return;
+    // ✅ Seguridad extra: si ya tengo respuesta FINAL en esta ronda (p.ej. rendición), no puedo buzzear
+const myFinal = round.answers?.[playerId];
+if (myFinal && myFinal.roundStartAt === round.startAt) return;
+
 
     // límites de intentos por jugador en extremo/locura
     const mode = r.config?.modoJuego || "normal";
@@ -420,6 +449,16 @@ if (mode === "extremo" || mode === "locura") {
   if (surrendered) st.textContent = `Te rendiste 🏳️ Era: ${title}`;
   else st.textContent = `Incorrecto ❌ Era: ${title}`;
 }
+// ✅ Si se rinde, esto es FINAL para este jugador (en cualquier modo)
+if (surrendered) {
+  updates[`round.answers.${playerId}`] = {
+    raw: "",
+    correct: false,
+    surrendered: true,
+    ts: nowMs(),
+    roundStartAt: round.startAt
+  };
+}
 
 
   // reabrimos buzzer para que otros puedan buzzear
@@ -427,12 +466,6 @@ if (mode === "extremo" || mode === "locura") {
   updates["round.buzzer.lockedBy"] = null;
   updates["round.buzzer.lockedAt"] = null;
   updates["round.buzzer.expiresAt"] = null;
-// “simula” el nuevo attemptsUsed en memoria para el helper
-if (max !== Infinity) {
-  room.round = room.round || {};
-  room.round.attemptsUsed = room.round.attemptsUsed || {};
-  room.round.attemptsUsed[playerId] = (room.round.attemptsUsed[playerId] ?? 0) + 1;
-}
 // “simula” el nuevo attemptsUsed en memoria para el helper
 if (max !== Infinity) {
   room.round = room.round || {};
