@@ -1,4 +1,4 @@
-const CACHE_NAME = "qsdcinemulti-v20";
+const CACHE_NAME = "qsdcinemulti-v21";
 const CORE_ASSETS = [
   "./",
   "index.html",
@@ -13,7 +13,7 @@ const CORE_ASSETS = [
   "icon-192.png",
   "icon-512.png",
   "movies.js",
-  "buzzer.js
+  "buzzer.js"
 ];
 
 self.addEventListener("install", (e) => {
