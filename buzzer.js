@@ -267,13 +267,14 @@ if (alreadyFinal) {
   btnBuzz.disabled = true;
   const title = getPrimaryTitle(round.movieIndex);
   txt.textContent = myFinal.surrendered ?
-     `Te rendiste 🏳️ Era: ${title}`
+     `Te rendiste 🏳️`
     : "Ya has respondido.";
   return;
 }
 
 if (used >= max) {
   btnBuzz.disabled = true;
+  const title = getPrimaryTitle(round.movieIndex);
   txt.textContent = `Sin intentos disponibles. Era: ${title}`;
 } else {
   btnBuzz.disabled = false;
@@ -565,7 +566,7 @@ if (max !== Infinity) {
 
   await updateRoom(roomId, updates);
 // ✅ En normal/contrarreloj: si tras esta acción todos están rendidos, resolver
-if (mode === "normal" || mode === "contrarreloj" && surrendered) {
+if ((mode === "normal" || mode === "contrarreloj") && surrendered) {
   try {
     const snap = await getDoc(roomRef(roomId));
     if (snap.exists()) {
