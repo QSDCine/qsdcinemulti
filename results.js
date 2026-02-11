@@ -1,4 +1,4 @@
-import { listenRoom } from "./firestore-utils.js";
+import { listenRoom, deleteRoom } from "./firestore-utils.js";
 
 function $(id) { return document.getElementById(id); }
 
@@ -21,9 +21,11 @@ function setError(msg) {
 const roomId = (getParam("room") || "").toUpperCase().trim();
 $("roomIdText").textContent = roomId;
 
-$("btnHome").addEventListener("click", () => {
+$("btnHome").addEventListener("click", async () => {
+  try { await deleteRoom(roomId); } catch {}
   window.location.href = "index.html";
 });
+
 
 $("btnLobby").addEventListener("click", () => {
   window.location.href = `lobby.html?room=${encodeURIComponent(roomId)}`;

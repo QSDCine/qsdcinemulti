@@ -118,7 +118,11 @@ export async function updateRoomFields(roomId, fieldMap) {
 export async function getServerClockOffsetMs() {
   // “Ping” simple: escribimos un serverTimestamp y lo leemos.
   // Estimamos el tiempo del cliente en el instante del servidor como el punto medio (t0+t1)/2.
-  const ref = doc(db, "timesync", crypto.randomUUID());
+  //const ref = doc(db, "timesync", crypto.randomUUID());
+  const deviceId = localStorage.getItem("qsdcmulti_deviceId") || "anon";
+const ref = doc(db, "timesync", deviceId);
+
+
 
   const t0 = Date.now();
   await setDoc(ref, { t: serverTimestamp() });
@@ -136,3 +140,6 @@ export async function getServerClockOffsetMs() {
   return serverMs - clientMid;
 }
 
+export async function deleteRoom(roomId) {
+  await deleteDoc(roomRef(roomId));
+}

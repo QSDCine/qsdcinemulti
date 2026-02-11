@@ -98,6 +98,7 @@ if (joinRoomInput && btnJoin) {
 
 
 
+
 document.getElementById("btn-install").addEventListener("click", () => {
 window.location.href = "offline.html";
 });

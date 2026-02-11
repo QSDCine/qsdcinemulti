@@ -932,11 +932,12 @@ if (btnBuzz) {
         nowMs,
         getMaxAttemptsForMode
       );
+const answerInput = document.getElementById("answerInput");
+setTimeout(() => answerInput?.focus(), 0);
     } catch (e) {
       // silencioso (si llega tarde o ya está bloqueado, no pasa nada)
     }
-   // const answerInput = document.getElementById("answerInput");
-    // setTimeout(() => answerInput?.focus(), 0);
+
   });
 }
 
