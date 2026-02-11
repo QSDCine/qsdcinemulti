@@ -347,6 +347,52 @@ export function buzzerApplyInputLock(room, playerId) {
   if (btnSurrender) btnSurrender.disabled = !iAmLocked;
 }
 
+async function maybeResolveIfAllSurrendered(roomId, room, nowMs) {
+  const round = room.round || {};
+  const startAt = round.startAt;
+  if (!startAt) return;
+
+  const players = Object.keys(room.players || {});
+  if (!players.length) return;
+
+  const answers = round.answers || {};
+
+  const allSurrendered = players.every(pid => {
+    const a = answers[pid];
+    return a && a.roundStartAt === startAt && a.surrendered;
+  });
+
+  if (!allSurrendered) return;
+
+  const now = nowMs();
+
+  // Rellenamos answers para que el host pueda avanzar con allPlayersAnswered()
+  const finalAnswers = {};
+  for (const pid of players) {
+    if (answers[pid] && answers[pid].roundStartAt === startAt) {
+      finalAnswers[pid] = answers[pid]; // mantiene surrendered:true
+    } else {
+      finalAnswers[pid] = {
+        raw: "",
+        correct: false,
+        surrendered: false,
+        noAnswer: true,
+        ts: now,
+        roundStartAt: startAt
+      };
+    }
+  }
+
+  await updateRoom(roomId, {
+    "round.answers": finalAnswers,
+    "round.revealUntil": now + 1200,
+    "round.buzzer.state": "resolved",
+    "round.buzzer.lockedBy": null,
+    "round.buzzer.lockedAt": null,
+    "round.buzzer.expiresAt": null
+  });
+}
+
 export async function buzzerSubmitAnswer({
   roomId,
   room,
@@ -480,13 +526,24 @@ if (max !== Infinity) {
 }
 
   await updateRoom(roomId, updates);
+// ✅ En normal/contrarreloj: si tras esta acción todos están rendidos, resolver
+if (mode === "normal" || mode === "contrarreloj") {
+  try {
+    const snap = await getDoc(roomRef(roomId));
+    if (snap.exists()) {
+      await maybeResolveIfAllSurrendered(roomId, snap.data(), nowMs);
+    }
+  } catch {}
+}
 // ✅ Si es extremo/locura, puede que ya no quede nadie con intentos -> auto-resolver
 // ✅ Puede que ya no quede nadie con intentos o que todos estén “finalizados” (rendidos)
-try {
-  const snap = await getDoc(roomRef(roomId));
-  if (snap.exists()) {
-    await maybeAutoResolveIfExhausted(roomId, snap.data(), nowMs);
-  }
-} catch {}
-
+// ✅ Solo auto-resolve en extremo/locura (en normal/contrarreloj NO toca)
+if (mode === "extremo" || mode === "locura") {
+  try {
+    const snap = await getDoc(roomRef(roomId));
+    if (snap.exists()) {
+      await maybeAutoResolveIfExhausted(roomId, snap.data(), nowMs);
+    }
+  } catch {}
+}
 }
