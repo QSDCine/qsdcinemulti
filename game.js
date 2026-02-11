@@ -53,6 +53,30 @@ function nowMs() { return Date.now() + clockOffsetMs; }
 // document.addEventListener("pointerdown", silentUnlockAudio, { once: true });
 // document.addEventListener("keydown", silentUnlockAudio, { once: true });
 
+let transientStatus = null; // { startAt, until, text }
+function setTransientStatus(text, startAt, ms = 1500) {
+  const st = $("answerStatus");
+  transientStatus = { startAt, until: nowMs() + ms, text };
+  if (st) st.textContent = text;
+
+  setTimeout(() => {
+    // solo limpia si sigue siendo el mismo mensaje/round
+    if (!transientStatus) return;
+    if (transientStatus.startAt !== startAt) return;
+    if (nowMs() < transientStatus.until) return;
+
+    transientStatus = null;
+
+    const cur = window.__currentRoom;
+    if (!cur?.round?.startAt || cur.round.startAt !== startAt) return;
+    if (isBuzzer(cur)) return; // buzzer lo gestiona solo
+
+    const st2 = $("answerStatus");
+    if (st2) st2.textContent = "";
+  }, ms + 50);
+}
+
+
 
 // ============================
 // Player identity (must be stable via ?tab=)
@@ -433,7 +457,7 @@ async function submitAnswer(room, opts = {}) {
       } else if (mode === "locura") {
         st.textContent = `Incorrecto ❌ Era: ${title} (esperando al resto)`;
       } else {
-        st.textContent = "Incorrecto ❌ Sigue intentando...";
+         setTransientStatus("Incorrecto ❌", round.startAt, 1500);
       }
     }
   }
@@ -524,6 +548,12 @@ const myAns = round.answers?.[playerId];
 const okStart = myAns && myAns.roundStartAt === round.startAt;
 const already = !!okStart;
 
+// ✅ Si hay un mensaje temporal activo para esta ronda, no lo pisamos
+if (transientStatus && transientStatus.startAt === round.startAt && nowMs() < transientStatus.until) {
+  if (st) st.textContent = transientStatus.text;
+  return;
+}
+
 
   // pendiente local
   if (!already && pendingAnswerForStartAt === round.startAt) {
@@ -551,13 +581,18 @@ const already = !!okStart;
     else st.textContent = `Incorrecto ❌ Era: ${title} (esperando al resto)`;
   } else {
     const mode = getMode(room);
-    if (mode === "extremo") {
-      const used = round.attemptsUsed?.[playerId] ?? 0;
-      const remaining = Math.max(0, 3 - used);
-      st.textContent = `Te quedan ${remaining} intento(s).`;
-    } else {
-      st.textContent = "";
-    }
+if (mode === "extremo") {
+  const used = round.attemptsUsed?.[playerId] ?? 0;
+  const remaining = Math.max(0, 3 - used);
+
+  const missedThisRound =
+    (round.missedStartAt?.[playerId] === round.startAt) &&
+    !!round.missed?.[playerId];
+
+  st.textContent = missedThisRound ? `Te quedan ${remaining} intento(s).` : "";
+} else {
+  st.textContent = "";
+}
   }
 }
 
@@ -748,7 +783,7 @@ function resetUIForNewRound(room) {
   if (hc) hc.innerHTML = "";
 
   const st = $("answerStatus");
-  if (st) st.textContent = "Nueva ronda: escribe tu respuesta 👇";
+  if (st) st.textContent = "";
 
   // Rebuild hints once per round (no parpadeo)
   buildHintsForRound(room);

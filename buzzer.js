@@ -13,6 +13,30 @@ function maxAttemptsForMode(mode) {
   return Infinity;
 }
 
+let transientStatus = null; // { startAt, until, text }
+function setTransientStatus(text, startAt, ms = 1500) {
+  const st = $("answerStatus");
+  transientStatus = { startAt, until: nowMs() + ms, text };
+  if (st) st.textContent = text;
+
+  setTimeout(() => {
+    // solo limpia si sigue siendo el mismo mensaje/round
+    if (!transientStatus) return;
+    if (transientStatus.startAt !== startAt) return;
+    if (nowMs() < transientStatus.until) return;
+
+    transientStatus = null;
+
+    const cur = window.__currentRoom;
+    if (!cur?.round?.startAt || cur.round.startAt !== startAt) return;
+    if (isBuzzer(cur)) return; // buzzer lo gestiona solo
+
+    const st2 = $("answerStatus");
+    if (st2) st2.textContent = "";
+  }, ms + 50);
+}
+
+
 async function maybeAutoResolveIfExhausted(roomId, room, nowMs) {
   const mode = room?.config?.modoJuego || "normal";
   const max = maxAttemptsForMode(mode);
@@ -104,7 +128,14 @@ if (mode === "extremo") {
   extra = ` Te quedan ${remaining} intento(s).`;
 }
 
-if (st) st.textContent = `Tiempo agotado ⏱️ ${extra}`;
+if (st) st.textContent = `Tiempo agotado ⏱️${extra}`;
+setTimeout(() => {
+  const cur = window.__currentRoom;
+  if (!cur?.round?.startAt || cur.round.startAt !== round.startAt) return;
+  const st2 = document.getElementById("answerStatus");
+  if (st2) st2.textContent = "";
+}, 1500);
+
 
 
       // liberamos buzzer y cortamos racha
@@ -243,7 +274,7 @@ if (alreadyFinal) {
 
 if (used >= max) {
   btnBuzz.disabled = true;
-  txt.textContent = "Sin intentos disponibles.";
+  txt.textContent = `Sin intentos disponibles. Era: ${title}`;
 } else {
   btnBuzz.disabled = false;
   txt.textContent = "Pulsa BUZZ para responder";
@@ -499,7 +530,14 @@ if (mode === "extremo" || mode === "locura") {
   else st.textContent = `Incorrecto ❌ Te quedan ${remaining} intento(s).`;
 } else {
   if (surrendered) st.textContent = `Te rendiste 🏳️ Era: ${title}`;
-  else st.textContent = `Incorrecto ❌ Era: ${title}`;
+  else st.textContent = "Incorrecto ❌";
+setTimeout(() => {
+  const cur = window.__currentRoom;
+  if (!cur?.round?.startAt || cur.round.startAt !== round.startAt) return;
+  const st2 = document.getElementById("answerStatus");
+  if (st2) st2.textContent = "";
+}, 1500);
+
 }
 // ✅ Si se rinde, esto es FINAL para este jugador (en cualquier modo)
 if (surrendered) {
@@ -527,7 +565,7 @@ if (max !== Infinity) {
 
   await updateRoom(roomId, updates);
 // ✅ En normal/contrarreloj: si tras esta acción todos están rendidos, resolver
-if (mode === "normal" || mode === "contrarreloj") {
+if (mode === "normal" || mode === "contrarreloj" && surrendered) {
   try {
     const snap = await getDoc(roomRef(roomId));
     if (snap.exists()) {
