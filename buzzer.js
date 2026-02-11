@@ -377,6 +377,13 @@ export function buzzerApplyInputLock(room, playerId) {
   if (input) input.disabled = !iAmLocked;
   if (btnAnswer) btnAnswer.disabled = !iAmLocked;
   if (btnSurrender) btnSurrender.disabled = !iAmLocked;
+ // ✅ UX: si soy yo el que ha buzzed, foco automático al input
+  if (iAmLocked && input) {
+    setTimeout(() => {
+      input.focus();
+      input.select?.();
+    }, 0);
+  }
 }
 
 async function maybeResolveIfAllSurrendered(roomId, room, nowMs) {

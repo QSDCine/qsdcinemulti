@@ -74,6 +74,30 @@ document.getElementById("btn-go-join").addEventListener("click", () => {
 document.getElementById("btn-back-from-create").addEventListener("click", () => show("screen-home"));
 document.getElementById("btn-back-from-join").addEventListener("click", () => show("screen-home"));
 
+// ✅ UX: Enter en "Unirse" (sin chocar con joinRoom() de firestore-utils)
+const joinNickInput = document.getElementById("join-nick");
+const joinRoomInput = document.getElementById("join-room-id");
+const btnJoin = document.getElementById("btn-join-room");
+
+if (joinNickInput && joinRoomInput) {
+  joinNickInput.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    joinRoomInput.focus();
+    joinRoomInput.select?.();
+  });
+}
+
+if (joinRoomInput && btnJoin) {
+  joinRoomInput.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    btnJoin.click();
+  });
+}
+
+
+
 document.getElementById("btn-install").addEventListener("click", () => {
 window.location.href = "offline.html";
 });
