@@ -5,6 +5,7 @@ import {
   getFirestore,
   doc,
   getDoc,
+  getDocFromServer,
   setDoc,
   updateDoc,
   serverTimestamp,
@@ -115,31 +116,25 @@ export async function updateRoomFields(roomId, fieldMap) {
   await updateRoom(roomId, fieldMap);
 }
 
-export async function getServerClockOffsetMs() {
+
   // “Ping” simple: escribimos un serverTimestamp y lo leemos.
   // Estimamos el tiempo del cliente en el instante del servidor como el punto medio (t0+t1)/2.
   //const ref = doc(db, "timesync", crypto.randomUUID());
+ export async function getServerClockOffsetMs() {
   const deviceId = localStorage.getItem("qsdcmulti_deviceId") || "anon";
-const ref = doc(db, "timesync", deviceId);
-
-
+  const ref = doc(db, "timesync", deviceId);
 
   const t0 = Date.now();
   await setDoc(ref, { t: serverTimestamp() });
-  const snap = await getDoc(ref);
-  const t1 = Date.now();
 
+  // ✅ fuerza lectura del servidor (evita cache / timestamp sin resolver)
+  const snap = await getDocFromServer(ref);
+
+  const t1 = Date.now();
   const data = snap.data();
   const serverMs = data?.t?.toMillis?.();
   if (!serverMs) return 0;
 
-  // Limpieza (opcional)
-  try { await deleteDoc(ref); } catch {}
-
   const clientMid = (t0 + t1) / 2;
   return serverMs - clientMid;
-}
-
-export async function deleteRoom(roomId) {
-  await deleteDoc(roomRef(roomId));
 }
