@@ -548,11 +548,11 @@ const myAns = round.answers?.[playerId];
 const okStart = myAns && myAns.roundStartAt === round.startAt;
 const already = !!okStart;
 
-// ✅ Si hay un mensaje temporal activo para esta ronda, no lo pisamos
-if (transientStatus && transientStatus.startAt === round.startAt && nowMs() < transientStatus.until) {
-  if (st) st.textContent = transientStatus.text;
-  return;
-}
+// Si hay un mensaje temporal activo para esta ronda, no lo pisamos ANTIGUO
+// if (transientStatus && transientStatus.startAt === round.startAt && nowMs() < transientStatus.until) {
+ //  if (st) st.textContent = transientStatus.text;
+ // return;
+// }
 
 
   // pendiente local
@@ -573,6 +573,12 @@ if (transientStatus && transientStatus.startAt === round.startAt && nowMs() < tr
   if (btnSurrender) btnSurrender.disabled = already;
 
   if (!st) return;
+
+// ✅ Si hay un mensaje temporal activo para esta ronda, no lo pisamos
+if (transientStatus && transientStatus.startAt === round.startAt && nowMs() < transientStatus.until) {
+  st.textContent = transientStatus.text;
+  return;
+}
 
   if (already) {
     const title = getPrimaryTitle(round.movieIndex);
