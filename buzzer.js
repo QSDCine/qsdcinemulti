@@ -380,6 +380,7 @@ export function buzzerApplyInputLock(room, playerId) {
  // ✅ UX: si soy yo el que ha buzzed, foco automático al input
   if (iAmLocked && input) {
     setTimeout(() => {
+      input.value = ""; 
       input.focus();
      }, 0);
   }
