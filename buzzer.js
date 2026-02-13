@@ -513,9 +513,16 @@ if (mode === "extremo") {
   delta = -20;
 } else {
   // normal / contrarreloj
-  if (surrendered) delta = -3;
-  else delta = 0;
+  if (surrendered) {
+    const persisted = round.hintsUsed?.[playerId] ?? 0;
+    const okStart = round.hintsUsedStartAt?.[playerId] === round.startAt;
+    const used = okStart ? Math.max(persisted, hintsUsedThisRound ?? 0) : 0;
+    delta = -3 - used;
+  } else {
+    delta = 0;
+  }
 }
+
 
 if (delta) updates[`players.${playerId}.puntos`] = prevPts + delta;
 

@@ -694,7 +694,13 @@ if ((room.config?.modoRonda === "buzzer") && ans.noAnswer) {
       else delta = correct ? 7 : -3;
     } else if (mode === "contrarreloj") {
       // base como normal + speed bonus
-      if (surrendered) delta = -3;
+      if (surrendered) {
+  const hintsUsed = round.hintsUsed?.[pid] ?? 0;
+  const okStart = round.hintsUsedStartAt?.[pid] === round.startAt;
+  const used = okStart ? hintsUsed : 0;
+  delta = -3 - used;
+}
+
       else if (correct) {
         const hintsUsed = round.hintsUsed?.[pid] ?? 0;
         const okStart = round.hintsUsedStartAt?.[pid] === round.startAt;
@@ -706,7 +712,12 @@ if ((room.config?.modoRonda === "buzzer") && ans.noAnswer) {
       delta += (speedBonus[pid] || 0);
     } else {
       // normal
-      if (surrendered) delta = -3;
+      if (surrendered) {
+  const hintsUsed = round.hintsUsed?.[pid] ?? 0;
+  const okStart = round.hintsUsedStartAt?.[pid] === round.startAt;
+  const used = okStart ? hintsUsed : 0;
+  delta = -3 - used;
+}
       else if (correct) {
         const hintsUsed = round.hintsUsed?.[pid] ?? 0;
         const okStart = round.hintsUsedStartAt?.[pid] === round.startAt;
