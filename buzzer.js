@@ -381,8 +381,7 @@ export function buzzerApplyInputLock(room, playerId) {
   if (iAmLocked && input) {
     setTimeout(() => {
       input.focus();
-      input.select?.();
-    }, 0);
+     }, 0);
   }
 }
 
