@@ -138,3 +138,7 @@ export async function updateRoomFields(roomId, fieldMap) {
   const clientMid = (t0 + t1) / 2;
   return serverMs - clientMid;
 }
+
+export async function deleteRoom(roomId) {
+  await deleteDoc(roomRef(roomId));
+}
