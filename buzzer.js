@@ -6,6 +6,8 @@ import { db, roomRef, updateRoom } from "./firestore-utils.js";
 const BUZZ_WINDOW_MS = 10000;
 
 let __buzzerIntervalStarted = false;
+let __lastLockKey = null;
+
 
 function maxAttemptsForMode(mode) {
   if (mode === "locura") return 1;
@@ -378,12 +380,17 @@ export function buzzerApplyInputLock(room, playerId) {
   if (btnAnswer) btnAnswer.disabled = !iAmLocked;
   if (btnSurrender) btnSurrender.disabled = !iAmLocked;
  // ✅ UX: si soy yo el que ha buzzed, foco automático al input
-  if (iAmLocked && input) {
-    setTimeout(() => {
-      input.value = ""; 
-      input.focus();
-     }, 0);
-  }
+const lockKey = iAmLocked ? `${round.startAt}:${playerId}` : null;
+
+if (!iAmLocked) {
+  __lastLockKey = null;
+} else if (input && __lastLockKey !== lockKey) {
+  __lastLockKey = lockKey;
+
+  // ✅ SOLO cuando acabas de ganar el lock
+  input.value = "";
+  setTimeout(() => input.focus({ preventScroll: true }), 0);
+}
 }
 
 async function maybeResolveIfAllSurrendered(roomId, room, nowMs) {
